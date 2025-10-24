@@ -1,10 +1,16 @@
+from django.utils import timezone
 from django.conf import settings
 from django.db import models
+from django.db.models import Q, Exists, OuterRef
+
+
+
 
 class Course(models.Model):
     title = models.CharField(max_length=150)
     code  = models.CharField(max_length=30, unique=True)
     description = models.TextField(blank=True)
+    total_duration_hours = models.DecimalField(max_digits=4, decimal_places=2, default=3.0) # type: ignore # e.g., 3.0 for 3 hours, 1.5 for 1.5 hours
     is_public = models.BooleanField(default=True)
 
     def __str__(self): return self.title
@@ -17,11 +23,11 @@ class Batch(models.Model):
     end_date   = models.DateField()
 
 class Session(models.Model):
-    STATUS = (("scheduled","scheduled"),("canceled","canceled"),("completed","completed"))
+    SESSION_STATUS = (("available", "Available"), ("booked", "Booked"), ("completed","Completed"), ("canceled","Canceled"))
     batch = models.ForeignKey(Batch, on_delete=models.CASCADE, related_name="sessions")
     start_dt = models.DateTimeField(db_index=True)
     end_dt   = models.DateTimeField()
-    status   = models.CharField(max_length=12, choices=STATUS, default="scheduled")
+    status = models.CharField(max_length=12, choices=SESSION_STATUS, default="available")
     reason   = models.CharField(max_length=200, blank=True)
 
     class Meta:
@@ -30,12 +36,33 @@ class Session(models.Model):
         models.Index(fields=["batch", "start_dt"]),
     ]
 
-class Enrollment(models.Model):
-    user  = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    batch = models.ForeignKey(Batch, on_delete=models.CASCADE)
-    status = models.CharField(max_length=12, default="active")
-    class Meta:
-        unique_together = ("user","batch")
+
+class Booking(models.Model):
+    STATUS_CHOICES = (("pending", "Pending"), ("approved", "Approved"), ("rejected", "Rejected"))
+
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="bookings")
+    course = models.ForeignKey(Course, on_delete=models.CASCADE)
+
+    # ကျောင်းသားက ရွေးချယ်လိုက်တဲ့ session တွေအားလုံး
+    sessions = models.ManyToManyField(Session)
+
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="pending")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Booking for {self.student.username} in {self.course.title}"
+
+# class Enrollment(models.Model):
+#     STATUS_CHOICES = (
+#         ("pending", "Pending"),
+#         ("approved", "Approved"),
+#         ("rejected", "Rejected"),
+#     )
+#     user  = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+#     batch = models.ForeignKey(Batch, on_delete=models.CASCADE)
+#     status = models.CharField(max_length=12, choices=STATUS_CHOICES, default="pending")
+#     class Meta:
+#         unique_together = ("user","batch")
 
 class DeviceToken(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -59,10 +86,16 @@ class Question(models.Model):
     text = models.TextField()
     qtype = models.CharField(max_length=10, choices=QTYPE, default="MCQ")
 
+    def __str__(self):
+        return self.text
+
 class Option(models.Model):  # for MCQ
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='options')
     text = models.CharField(max_length=255)
     is_correct = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.text
 
 class OrderItem(models.Model):  # for ORDER
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='order_items')
@@ -76,6 +109,33 @@ class Submission(models.Model):
     finished_at = models.DateTimeField(null=True, blank=True)
     score = models.FloatField(default=0)
 
+
+    def calculate_score(self):
+        total = self.quiz.questions.count() # type: ignore
+        if total == 0:
+            self.score = 0
+            self.save(update_fields=["score", "finished_at"])
+            return {"score": 0, "correct": 0, "total": 0}
+
+        correct = 0
+        # Prefetch related answers and their nested relations for performance
+        answers = self.answers.select_related("question", "selected_option").prefetch_related("question__order_items") # type: ignore
+
+        for ans in answers:
+            q = ans.question
+            if q.qtype == "MCQ":
+                if ans.selected_option and ans.selected_option.is_correct:
+                    correct += 1
+            else: # ORDER type
+                expected_order = list(q.order_items.order_by("order_index").values_list("id", flat=True))
+                if ans.given_order == expected_order:
+                    correct += 1
+
+        self.score = round(100 * correct / total, 2)
+        self.finished_at = timezone.now()
+        self.save(update_fields=["score", "finished_at"])
+        return {"score": self.score, "correct": correct, "total": total}
+
 class Answer(models.Model):
     submission = models.ForeignKey(Submission, on_delete=models.CASCADE, related_name='answers')
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
@@ -86,12 +146,34 @@ class Answer(models.Model):
 
 
 
+class Tag(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+
 
 class Article(models.Model):
     title = models.CharField(max_length=200)
     body = models.TextField()
-    tags = models.JSONField(default=list)  # ["traffic-signs","safety"]
+    tags = models.ManyToManyField(Tag, blank=True)
     published = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     def __str__(self): return self.title
+
+
+
+
+class Notification(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
+    title = models.CharField(max_length=255)
+    body = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at'] # အသစ်ဆုံးကို အပေါ်မှာပြရန်
+
+    def __str__(self):
+        return self.title
+
+
+

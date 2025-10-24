@@ -1,22 +1,34 @@
 # core/views.py
 from datetime import date
 from django.utils import timezone
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample
-from .models import Article, Course, Batch, Quiz, Session, DeviceToken, Enrollment, Submission
-from .serializers import ArticleSer, CourseSer, BatchSer, QuizDetailSer, SessionSer, DeviceTokenSer, EnrollmentCreateSer, SubmissionSer
+from .models import Article, Booking, Course, Batch, Quiz, Session, DeviceToken,  Submission
+from .serializers import (
+    ArticleSer, BatchDetailSerializer, BatchSerializer, BookingCreateSerializer, BookingListDetailSerializer,
+    CourseDetailSerializer, CourseListSerializer, NotificationSerializer, QuestionPublicSer, QuizDetailSer,
+    SessionSer, DeviceTokenSer, SubmissionSer)
 from .services import generate_sessions
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef, Subquery
+
 # Swagger/Redoc (drf-spectacular)
 from drf_spectacular.utils import extend_schema, extend_schema_view
+from firebase_admin import messaging
 
+from django.shortcuts import get_object_or_404
+
+from core import serializers
 
 class IsInstructorOrAdmin(permissions.BasePermission):
     def has_permission(self, req, view):  # type: ignore
         # roles သုံးမယ်ဆို: return req.user.is_authenticated and req.user.role in ("owner","admin","instructor")
-        return bool(req.user and req.user.is_authenticated and req.user.is_staff)
+        return bool(
+            req.user and
+            req.user.is_authenticated and
+            req.user.role in ("owner", "admin", "instructor")
+        )
 
 
 class IsAdminOrReadOnly(permissions.BasePermission):
@@ -28,8 +40,13 @@ class IsAdminOrReadOnly(permissions.BasePermission):
 
 class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all().order_by("title")
-    serializer_class = CourseSer
+    # serializer_class = CourseSer
     permission_classes = [permissions.AllowAny]
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve': # Detail view အတွက်
+            return CourseDetailSerializer
+        return CourseListSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -39,30 +56,63 @@ class CourseViewSet(viewsets.ModelViewSet):
 
 class BatchViewSet(viewsets.ModelViewSet):
     queryset = Batch.objects.select_related("course", "instructor")
-    serializer_class = BatchSer
-    permission_classes = [IsInstructorOrAdmin]
+    # serializer_class = BatchSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve': # Detail view အတွက်
+            return BatchDetailSerializer
+        return BatchSerializer
 
     @action(detail=False, methods=["GET"], permission_classes=[permissions.IsAuthenticated])
     def available_for_me(self, request):
         user = request.user
-        # batch that has at least 1 session scheduled AND no overlap with user’s active sessions
-        my_sessions = Session.objects.filter(batch__enrollment__user=user,
-                                            batch__enrollment__status="active",
-                                            status="scheduled")
-        ok_batches = []
-        for b in Batch.objects.all():
-            ts = Session.objects.filter(batch=b, status="scheduled")
-            if not ts.exists():  # no sessions yet → skip or include as you like
-                continue
-            overlap = False
-            for s in ts:
-                if my_sessions.filter(start_dt__lt=s.end_dt,
-                                    end_dt__gt=s.start_dt).exists():
-                    overlap = True; break
-            if not overlap:
-                ok_batches.append(b.id) # type: ignore
-        qs = Batch.objects.filter(id__in=ok_batches)
-        return Response(BatchSer(qs, many=True).data)
+
+        # 1. Get all of the current user's active, scheduled sessions
+        my_active_sessions = Session.objects.filter(
+            batch__enrollment__user=user,
+            batch__enrollment__status="active",
+            status="scheduled"
+        ).values("start_dt", "end_dt")
+
+        # 2. Build Q objects for each overlapping time range
+        overlap_conditions = Q()
+        for s in my_active_sessions:
+            overlap_conditions |= Q(
+                sessions__start_dt__lt=s['end_dt'],
+                sessions__end_dt__gt=s['start_dt'],
+                sessions__status='scheduled'
+            )
+
+        # 3. Exclude batches that have any session matching the overlap conditions
+        # Also, ensure the batch has at least one scheduled session.
+        if overlap_conditions:
+            qs = Batch.objects.annotate(
+                has_scheduled_sessions=Exists(Session.objects.filter(batch=OuterRef('pk'), status='scheduled'))
+            ).filter(has_scheduled_sessions=True).exclude(overlap_conditions)
+        else:
+            # If user has no sessions, all batches with scheduled sessions are available
+            qs = Batch.objects.annotate(
+                has_scheduled_sessions=Exists(Session.objects.filter(batch=OuterRef('pk'), status='scheduled'))
+            ).filter(has_scheduled_sessions=True)
+
+        return Response(BatchSerializer(qs.distinct(), many=True).data)
+
+    @action(detail=True, methods=['get'], url_path='available-slots')
+    def available_slots(self, request, pk=None):
+        """
+        Return a list of available (scheduled) session start times for a batch.
+        """
+        batch = self.get_object()
+
+        # ဒီ batch နဲ့ဆိုင်ပြီး "scheduled" ဖြစ်နေတဲ့ session တွေကိုပဲ ဆွဲထုတ်ပါ
+        scheduled_sessions = Session.objects.filter(batch=batch, status='scheduled')
+
+        # အဲ့ဒီ session တွေရဲ့ start_dt (start datetime) တွေကိုပဲ list အဖြစ်ပြန်ပေးပါ
+        # Flutter က ဒါကိုသုံးပြီး ပြက္ခဒိန်မှာ အားတဲ့ရက်တွေကို ပြပေးမှာပါ
+        slots = list(scheduled_sessions.values_list('start_dt', flat=True))
+
+        return Response(slots)
 
 
 @extend_schema_view(
@@ -72,7 +122,7 @@ class BatchViewSet(viewsets.ModelViewSet):
 class SessionViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Session.objects.select_related("batch", "batch__course", "batch__instructor")
     serializer_class = SessionSer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
 
     @action(detail=True, methods=["POST"], permission_classes=[IsInstructorOrAdmin])
@@ -81,8 +131,8 @@ class SessionViewSet(viewsets.ReadOnlyModelViewSet):
         s.status = "completed"; s.save(update_fields=["status"])
         # notify enrolled students
         tokens = list(DeviceToken.objects.filter(
-            user__enrollment__batch=s.batch,
-            user__enrollment__status="active").values_list("token", flat=True).distinct())
+            user__bookings__sessions=s,
+            user__bookings__status='approved').values_list("token", flat=True).distinct())
         if tokens:
             messaging.send_multicast(messaging.MulticastMessage(
                 tokens=tokens,
@@ -130,7 +180,7 @@ class SessionViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=["POST"], permission_classes=[IsInstructorOrAdmin])
     def generate(self, request):
         data = request.data
-        batch = Batch.objects.get(id=data["batch_id"])
+        batch = get_object_or_404(Batch, id=data["batch_id"])
         created = generate_sessions(
             batch=batch,
             weekdays=list(map(int, data["weekdays"])),
@@ -140,6 +190,22 @@ class SessionViewSet(viewsets.ReadOnlyModelViewSet):
             until=date.fromisoformat(data["until"]),
         )
         return Response({"created": created})
+
+    @action(detail=False, methods=['get'], url_path='my-upcoming')
+    def my_upcoming(self, request):
+        """Return a list of upcoming (scheduled) sessions for the current user."""
+        user = request.user
+        now = timezone.now()
+        # User enroll လုပ်ထားပြီး၊ scheduled ဖြစ်ကာ၊ အခုချိန်ထက်နောက်ကျတဲ့ session တွေကိုပဲဆွဲထုတ်ပါ
+        upcoming_sessions = Session.objects.filter(
+            booking__student=user,
+            booking__status='approved',
+            status='scheduled',
+            start_dt__gte=now
+        ).order_by('start_dt')[:5] # အများဆုံး ၅ ခုပဲပြမယ်
+
+        serializer = self.get_serializer(upcoming_sessions, many=True)
+        return Response(serializer.data)
 
 
 class PushViewSet(viewsets.ViewSet):
@@ -158,15 +224,106 @@ class PushViewSet(viewsets.ViewSet):
 
 
 class IsStudent(permissions.BasePermission):
-    def has_permission(self, req, view): # type: ignore
-        return req.user and req.user.is_authenticated
+    def has_permission(self, req, view):
+        # login ဝင်ထားပြီး role က 'student' ဖြစ်မှ ခွင့်ပြုမယ်
+        return bool(
+            req.user and
+            req.user.is_authenticated and
+            req.user.role == 'student' # Django User model မှာ role field ရှိတယ်လို့ ယူဆပါတယ်
+        )
+
+
+class BookingViewSet(viewsets.ModelViewSet):
+    """ViewSet for handling booking requests."""
+    queryset = Booking.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return BookingCreateSerializer
+        return BookingListDetailSerializer
+
+    def get_queryset(self):
+        # user က instructor/admin ဆိုရင် booking အားလုံးကိုပြ၊ student ဆိုရင် ကိုယ့်ဟာကိုယ်ပဲပြ
+        if self.request.user.is_staff:
+            return Booking.objects.all()
+        return Booking.objects.filter(student=self.request.user)
+
+    def perform_create(self, serializer):
+        # Booking အသစ်လုပ်ရင် student ကို auto သတ်မှတ်
+        serializer.save(student=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        booking = self.get_object()
+
+
+        booking.status = 'approved'
+        booking.save()
+
+        # Booking ထဲက session အားလုံးရဲ့ status ကို 'booked' လို့ပြောင်းပါ
+        booking.sessions.all().update(status='booked')
+
+        return Response({'status': 'booking approved'})
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        booking = self.get_object()
+        # TODO: Add permission check
+        booking.status = 'rejected'
+        booking.save()
+        # Note: Rejected booking's sessions are made available again if needed,
+        # but for simplicity we'll leave them as is.
+        return Response({'status': 'booking rejected'})
 
 
 
-class EnrollmentViewSet(viewsets.ModelViewSet):
-    queryset = Enrollment.objects.select_related("batch","user")
-    permission_classes = [IsStudent]
-    serializer_class = EnrollmentCreateSer
+# class EnrollmentViewSet(viewsets.ModelViewSet):
+#     queryset = Enrollment.objects.all()
+#     permission_classes = [permissions.IsAuthenticated]
+#     serializer_class = EnrollmentCreateSer
+
+#     def get_queryset(self):
+#         """
+#         Students can only see their own enrollments.
+#         Staff can see all enrollments.
+#         """
+#         user = self.request.user
+#         if user.is_staff:
+#             return Enrollment.objects.select_related('batch', 'user').all()
+#         return Enrollment.objects.select_related('batch').filter(user=user)
+
+#     def perform_create(self, serializer):
+#         """
+#         Automatically assign the current user to the enrollment
+#         and prevent duplicate enrollments.
+#         """
+#         batch = serializer.validated_data.get('batch')
+#         user = self.request.user
+
+#         # user က ဒီ batch ကို enroll လုပ်ပြီးသားလား အရင်စစ်ဆေးပါ
+#         if Enrollment.objects.filter(user=user, batch=batch).exists():
+#             # လုပ်ပြီးသားဆိုရင် error message ပြန်ပေးပါ
+#             raise serializers.ValidationError("You are already enrolled in this batch.") # type: ignore
+
+#         # enroll မလုပ်ရသေးမှ user ကို သတ်မှတ်ပြီး save ပါ
+#         serializer.save(user=user)
+
+
+#     @action(detail=False, methods=['get'], url_path='my-enrollments')
+#     def my_enrollments(self, request):
+#         """Return a list of batches the current user is enrolled in."""
+#         user = request.user
+#         # status='active' အစား 'approved' ကိုပြောင်းပါ
+#         enrollments = Enrollment.objects.filter(user=user, status='approved')
+#         batches = [e.batch for e in enrollments]
+#         serializer = BatchSerializer(batches, many=True)
+#         return Response(serializer.data)
+
+
+
+
+
 
 
 
@@ -176,7 +333,7 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
 class QuizViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Quiz.objects.filter(is_published=True)
     serializer_class = QuizDetailSer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     @extend_schema(
         request=None,
@@ -185,6 +342,8 @@ class QuizViewSet(viewsets.ReadOnlyModelViewSet):
     )
     @action(detail=True, methods=["post"], url_path="start")
     def start(self, request, pk=None):
+        if not request.user.is_authenticated:
+            return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
         quiz = self.get_object()
         sub = Submission.objects.create(quiz=quiz, student=request.user)
         return Response({"submission_id": sub.id})
@@ -212,10 +371,15 @@ class SubmissionViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="answer")
     def answer(self, request, pk=None):
         sub = self.get_object()
-        qid = request.data["question_id"]
-        q = Question.objects.get(id=qid)
+        qid = request.data.get("question_id")
+        if not qid:
+            return Response({"error": "question_id is required"}, status=400)
+        q = get_object_or_404(Question, id=qid)
         if q.qtype == "MCQ":
-            opt = Option.objects.get(id=request.data["selected_option_id"], question=q)
+            opt_id = request.data.get("selected_option_id")
+            if not opt_id:
+                return Response({"error": "selected_option_id is required for MCQ"}, status=400)
+            opt = get_object_or_404(Option, id=opt_id, question=q)
             Answer.objects.update_or_create(
                 submission=sub, question=q,
                 defaults={"selected_option": opt, "given_order": None})
@@ -234,20 +398,26 @@ class SubmissionViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="finish")
     def finish(self, request, pk=None):
         sub = self.get_object()
-        total = sub.quiz.questions.count()
-        correct = 0
-        for ans in sub.answers.select_related("question","selected_option").all():
-            q = ans.question
-            if q.qtype == "MCQ":
-                if ans.selected_option and ans.selected_option.is_correct:
-                    correct += 1
-            else:
-                expected = list(q.order_items.order_by("order_index").values_list("id", flat=True))
-                if ans.given_order == expected:
-                    correct += 1
-        sub.score = round(100 * correct / max(total,1), 2)
-        sub.save(update_fields=["score"])
-        return Response({"score": sub.score, "correct": correct, "total": total})
+        # Check if already finished
+        if sub.finished_at:
+            return Response({"error": "This submission is already finished."}, status=400)
+        result = sub.calculate_score()
+        return Response(result)
+
+    @extend_schema(
+        summary="Get all questions for a specific submission",
+        responses={200: QuestionPublicSer(many=True)}
+    )
+    @action(detail=True, methods=['get'])
+    def questions(self, request, pk=None):
+        submission = self.get_object()
+        # user က ဒီ submission ရဲ့ ပိုင်ရှင်ဟုတ်မဟုတ် စစ်ဆေးပါ
+        if request.user != submission.student:
+            return Response({"detail": "Not allowed."}, status=status.HTTP_403_FORBIDDEN)
+        
+        questions = submission.quiz.questions.all().prefetch_related('options', 'order_items')
+        serializer = QuestionPublicSer(questions, many=True)
+        return Response(serializer.data)
 
 
 
@@ -266,3 +436,32 @@ class ArticleViewSet(viewsets.ModelViewSet):
         if tag:
             qs = qs.filter(tags__contains=[tag])
         return qs.order_by("-created_at")
+
+
+
+class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    A viewset for viewing notifications for the current user.
+    """
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        This view should return a list of all the notifications
+        for the currently authenticated user.
+        """
+        return self.request.user.notifications.all() # type: ignore
+
+    @action(detail=True, methods=['post'], url_path='mark-as-read')
+    def mark_as_read(self, request, pk=None):
+        notification = self.get_object()
+        if notification.user == request.user:
+            notification.is_read = True
+            notification.save()
+            return Response({'status': 'notification marked as read'})
+        return Response(status=status.HTTP_403_FORBIDDEN)
+
+
+
+

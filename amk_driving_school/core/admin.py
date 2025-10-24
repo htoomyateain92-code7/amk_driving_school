@@ -3,7 +3,7 @@
 from django.contrib import admin
 from django.utils import timezone
 from django.utils.timezone import localtime
-from .models import Answer, Article, Course, Batch, Option, OrderItem, Question, Quiz, Session, Enrollment, DeviceToken, Submission
+from .models import Answer, Article, Course, Batch, Option, OrderItem, Question, Quiz, Session,  DeviceToken, Submission, Notification, Booking
 
 
 # ---------- Inlines ----------
@@ -16,12 +16,12 @@ class SessionInline(admin.TabularInline):
     show_change_link = True
 
 
-class EnrollmentInline(admin.TabularInline):
-    model = Enrollment
-    extra = 0
-    fields = ("user", "status")
-    autocomplete_fields = ("user",)
-    show_change_link = True
+# class EnrollmentInline(admin.TabularInline):
+#     model = Enrollment
+#     extra = 0
+#     fields = ("user", "status")
+#     autocomplete_fields = ("user",)
+#     show_change_link = True
 
 
 class BatchInline(admin.TabularInline):
@@ -31,6 +31,13 @@ class BatchInline(admin.TabularInline):
     autocomplete_fields = ("instructor",)
     show_change_link = True
 
+
+class BookingInline(admin.TabularInline):
+    model = Booking
+    extra = 0
+    fields = ('student', 'course', 'status', 'created_at')
+    autocomplete_fields = ('student',)
+    show_change_link = True
 
 # ---------- Admins ----------
 @admin.register(Course)
@@ -52,7 +59,7 @@ class BatchAdmin(admin.ModelAdmin):
     search_fields = ("title", "course__title", "instructor__username")
     date_hierarchy = "start_date"
     autocomplete_fields = ("course", "instructor")
-    inlines = [SessionInline, EnrollmentInline]
+    inlines = [SessionInline]
 
     @admin.display(description="Sessions")
     def sessions_count(self, obj):
@@ -93,16 +100,40 @@ class SessionAdmin(admin.ModelAdmin):
         return qs.select_related("batch", "batch__course")
 
 
-@admin.register(Enrollment)
-class EnrollmentAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "batch", "status")
-    list_filter = ("status", "batch__course")
-    search_fields = ("user__username", "batch__title")
-    autocomplete_fields = ("user", "batch")
+# @admin.register(Enrollment)
+# class EnrollmentAdmin(admin.ModelAdmin):
+#     list_display = ['user', 'batch', 'status']
+#     list_filter = ['status', 'batch'] # status အလိုက်၊ batch အလိုက် filter လုပ်နိုင်ရန်
+#     list_editable = ['status'] # list view မှာပဲ status ကို တိုက်ရိုက်ပြင်နိုင်ရန်
+#     autocomplete_fields = ['user', 'batch']
 
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        return qs.select_related("user", "batch", "batch__course")
+#     @admin.display(description='Session Info')
+#     def session_info(self, obj):
+#         # Enrollment model မှာ session ကို တိုက်ရိုက်ချိတ်ထားတဲ့အတွက် obj.batch မလိုတော့ပါ
+#         return f"{obj.session.batch.title} - {obj.session.start_dt.strftime('%Y-%m-%d %H:%M')}"
+
+#     actions = ['approve_enrollments', 'reject_enrollments']
+
+#     # --- ဒီ action ကို အဓိကပြင်ဆင်ပါ ---
+#     def approve_enrollments(self, request, queryset):
+#         # queryset ထဲက enrollment တစ်ခုချင်းစီကို loop ပတ်ပါ
+#         for enrollment in queryset:
+#             # လက်ရှိ status က 'pending' ဖြစ်မှသာ အောက်က code ကို ဆက်လုပ်ပါ
+#             if enrollment.status == 'pending':
+#                 enrollment.status = 'approved'
+#                 enrollment.save() # .save() ကိုခေါ်တဲ့အတွက် signal က တစ်ခါပဲ အလုပ်လုပ်ပါတော့မယ်
+
+#     approve_enrollments.short_description = "Mark selected enrollments as Approved" # type: ignore
+
+#     def reject_enrollments(self, request, queryset):
+#         for enrollment in queryset:
+#             enrollment.status = 'rejected'
+#             enrollment.save() # .save() ကိုခေါ်တဲ့အတွက် signal တွေ အလုပ်လုပ်ပါပြီ
+
+#     reject_enrollments.short_description = "Mark selected enrollments as Rejected" # type: ignore
+
+
+
 
 
 @admin.register(DeviceToken)
@@ -202,3 +233,47 @@ class ArticleAdmin(admin.ModelAdmin):
     @admin.display(description="Tags")
     def tag_list(self, obj):
         return ", ".join(obj.tags or [])
+
+
+@admin.register(Notification)
+class NotificationsAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "title", "body", "is_read")
+    list_filter = ("is_read", "created_at")
+    search_fields = ("user", "title", "body", "is_read")
+    date_hierarchy = "created_at"
+    # ordering = ("-created_at")
+
+
+
+# ================================== #
+#         Booking Admin              #
+# ================================== #
+@admin.register(Booking)
+class BookingAdmin(admin.ModelAdmin):
+    list_display = ('id', 'student', 'course', 'status', 'created_at')
+    list_filter = ('status', 'course')
+    search_fields = ('student__username', 'course__title')
+    autocomplete_fields = ('student', 'course', 'sessions')
+    date_hierarchy = 'created_at'
+    ordering = ('-created_at',)
+
+    # Admin actions: request တွေကို တစ်ပြိုင်နက်တည်း approve/reject လုပ်ရန်
+    actions = ['approve_bookings', 'reject_bookings']
+
+    @admin.action(description="Mark selected bookings as Approved")
+    def approve_bookings(self, request, queryset):
+        for booking in queryset.filter(status='pending'):
+            booking.status = 'approved'
+            booking.save() # .save() ကိုခေါ်တဲ့အတွက် signal တွေ အလုပ်လုပ်ပါပြီ
+
+            # Booking approve ဖြစ်သွားတဲ့ session တွေကို 'booked' လို့ပြောင်းပါ
+            booking.sessions.all().update(status='booked')
+
+    @admin.action(description="Mark selected bookings as Rejected")
+    def reject_bookings(self, request, queryset):
+        for booking in queryset.filter(status='pending'):
+            booking.status = 'rejected'
+            booking.save() # .save() ကိုခေါ်တဲ့အတွက် signal တွေ အလုပ်လုပ်ပါပြီ
+
+            # (Optional) Rejected booking ရဲ့ session တွေကို 'available' ပြန်ထားပေးပါ
+            # booking.sessions.all().update(status='available')

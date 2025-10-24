@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "532024707456",
+    "project_id": "amk-driving",
+    "storage_bucket": "amk-driving.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:532024707456:android:e58bace5e09a67e4f71965",
+        "android_client_info": {
+          "package_name": "com.example.driving_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDodd8GMVJppRFgp1mYMYxT3qblrVcpDFM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:532024707456:android:4ac8673acb104f4ef71965",
+        "android_client_info": {
+          "package_name": "com.example.driving_school"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDodd8GMVJppRFgp1mYMYxT3qblrVcpDFM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:532024707456:android:f761da5562a692aff71965",
+        "android_client_info": {
+          "package_name": "com.hobocustomsoftware.driving_school"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDodd8GMVJppRFgp1mYMYxT3qblrVcpDFM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

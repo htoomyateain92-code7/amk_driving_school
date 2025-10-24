@@ -1,46 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../theme/app_theme.dart';
-import 'notification_bell.dart';
-import 'user_menu.dart';
 
-class AppShell extends StatelessWidget {
-  final PreferredSizeWidget? appBar;
+import '../features/notifications/screens/notification_screen.dart';
+import 'side_menu_drawer.dart';
+
+class AppShell extends ConsumerWidget {
   final Widget body;
-  final Widget? floatingActionButton;
-  const AppShell({
-    super.key,
-    this.appBar,
-    required this.body,
-    this.floatingActionButton,
-  });
+  final String title;
 
-  @override
-  Widget build(BuildContext context) {
-    return GradientBackground(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: appBar ?? _DefaultAppBar(),
-        body: body,
-        floatingActionButton: floatingActionButton,
-      ),
-    );
-  }
-}
-
-class _DefaultAppBar extends ConsumerWidget implements PreferredSizeWidget {
-  const _DefaultAppBar({super.key});
-  @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  const AppShell({super.key, required this.body, required this.title});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return AppBar(
-      title: const Text('AMK Driving School'),
-      actions: const [
-        Padding(padding: EdgeInsets.only(right: 8), child: NotificationBell()),
-        Padding(padding: EdgeInsets.only(right: 12), child: UserMenu()),
-      ],
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          IconButton(
+            icon: Badge(
+              label: Text('0'), // TODO: Get unread count
+              child: const Icon(Icons.notifications_outlined),
+            ),
+            onPressed: () {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const NotificationScreen()));
+            },
+          ),
+        ],
+      ),
+      drawer: const SideMenuDrawer(),
+      body: body,
     );
   }
 }

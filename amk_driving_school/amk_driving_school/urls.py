@@ -14,38 +14,55 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+# amk_driving_school/urls.py
+"""
+Main URL configuration for amk_driving_school project.
+"""
+"""
+Main URL configuration for amk_driving_school project.
+"""
 from django.contrib import admin
 from django.urls import path, include
-
-from rest_framework import permissions
 from django.conf import settings
 from django.conf.urls.static import static
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from django.views.decorators.csrf import csrf_exempt
 
+# --- simplejwt view တွေကို ဒီကနေ import မလုပ်တော့ပါဘူး ---
+# from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView 
 
-from drf_yasg.views import get_schema_view
-from drf_yasg import openapi
-from rest_framework import permissions
+# Custom JWT Views တွေကို accounts.views ကနေ import လုပ်ပါ
+from accounts.views import CustomTokenObtainPairView, CustomTokenRefreshView
 
-schema_view = get_schema_view(
-    openapi.Info(
-        title="Driving School API",
-        default_version="v1",
-        description="Courses, Batches, Sessions, Auth (JWT)",
-    ),
-    public=True,
-    permission_classes=(permissions.AllowAny,),
-)
-
+# Imports for API Documentation (drf-spectacular)
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+# from drf_spectacular.utils import extend_schema # ဒီမှာမလိုအပ်တော့ပါဘူး
 
 urlpatterns = [
+    # 1. Django Admin Site
     path('admin/', admin.site.urls),
 
-    path('api/core/', include('core.urls')),
-    path('api/accounts/', include('accounts.urls')),
+    # 2. Main API Endpoints
+    path('api/v1/', include('core.urls')),
 
+    # 3. JWT Token Authentication Endpoints
+    # url ထဲမှာ extend_schema နဲ့ decorate လုပ်စရာမလိုတော့ပါဘူး
+    path(
+        'api/v1/token/',
+        csrf_exempt(CustomTokenObtainPairView.as_view()),
+        name='token_obtain_pair'
+    ),
+    path(
+        'api/v1/token/refresh/',
+        CustomTokenRefreshView.as_view(),
+        name='token_refresh'
+    ),
 
-    path('swagger.json', schema_view.without_ui(cache_timeout=0), name='schema-json'),
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    # 4. API Schema & Documentation Endpoints
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

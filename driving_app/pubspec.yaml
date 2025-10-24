@@ -1,0 +1,46 @@
+name: driving_app
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^2.32.0
+  firebase_messaging: ^14.9.3
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Networking
+  dio: ^5.9.0
+
+  # Routing
+  go_router: ^13.2.5
+
+  # Secure Storage for API Token
+  flutter_secure_storage: ^9.2.4
+
+  cupertino_icons: ^1.0.8
+
+  intl: ^0.20.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Code Generation
+  build_runner: ^2.4.14
+  riverpod_generator: ^2.6.5
+
+  # Lints
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

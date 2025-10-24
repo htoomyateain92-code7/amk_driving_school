@@ -1,79 +1,120 @@
-import 'package:driving_school/firebase_options.dart';
-import 'package:driving_school/screens/auth/login_screen.dart';
-import 'package:driving_school/screens/auth/register_screen.dart';
-import 'package:driving_school/screens/guest/guest_home.dart';
-import 'package:driving_school/screens/session_detail.dart';
-import 'package:driving_school/services/endpoints.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:go_router/go_router.dart';
 
-import 'screens/home_after_login.dart';
-import 'services/push_service.dart';
+import 'package:driving_school/features/auth/screens/login_screen.dart';
+import 'package:driving_school/features/home/screens/home_screen.dart';
+import 'package:driving_school/features/student_dashboard/screens/student_dashboard_screen.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+import 'package:driving_school/features/auth/providers/auth_providers.dart';
 
-  // Only run push on mobile for now
-  await PushService.init(); // This will early-return on web (we'll add the guard below)
+import 'firebase_options.dart';
 
-  runApp(const App());
-}
+final routerProvider = Provider<GoRouter>((ref) {
+  final authState = ref.watch(authStateProvider);
 
-class App extends StatefulWidget {
-  const App({super.key});
-  @override
-  State<App> createState() => _AppState();
-}
+  return GoRouter(
+    initialLocation: '/',
+    refreshListenable:
+        GoRouterRefreshStream(ref.read(authStateProvider.stream)),
+    redirect: (BuildContext context, GoRouterState state) {
+      if (authState.isLoading || authState.hasError) {
+        return null;
+      }
 
-class _AppState extends State<App> {
-  late final GoRouter _router = GoRouter(
-    initialLocation: '/boot',
+      final isLoggedIn = authState.valueOrNull != null;
+
+      final isGoingToLogin = state.matchedLocation == '/login';
+
+      if (!isLoggedIn && !isGoingToLogin) {
+        return '/login';
+      }
+
+      if (isLoggedIn && isGoingToLogin) {
+        return '/';
+      }
+
+      return null;
+    },
     routes: [
-      GoRoute(path: '/boot', builder: (_, __) => const _Boot()),
-      GoRoute(path: '/', builder: (_, __) => const GuestHome()),
-      GoRoute(path: '/home', builder: (_, __) => const HomeAfterLogin()),
-      GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-      GoRoute(path: '/register', builder: (_, __) => const RegisterScreen()),
-      // e.g. deep link to session: /session/:id
       GoRoute(
-        path: '/session/:id',
-        builder: (_, s) =>
-            SessionDetail(id: int.parse(s.pathParameters['id']!)),
+        path: '/splash',
+        builder: (context, state) => const SplashScreen(),
+      ),
+      GoRoute(
+        path: '/login',
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: '/',
+        builder: (context, state) {
+          // ဒီနေရာမှာ user profile provider ကိုသုံးပြီး ဘယ် screen ပြမလဲ ဆုံးဖြတ်နိုင်ပါတယ်
+          final userProfile = ref.watch(userProfileProvider);
+          return userProfile.when(
+            data: (user) {
+              if (user != null && user.role == 'student') {
+                return const StudentDashboardScreen();
+              }
+              return const HomeScreen(); // Guest or unenrolled student
+            },
+            loading: () => const SplashScreen(),
+            error: (err, stack) =>
+                const HomeScreen(), // Error ဖြစ်ရင်လည်း Home ကိုပဲပြ
+          );
+        },
       ),
     ],
   );
+});
 
-  @override
-  Widget build(BuildContext context) =>
-      MaterialApp.router(routerConfig: _router);
+// --- Main App ---
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  runApp(const ProviderScope(child: MyApp()));
 }
 
-class _Boot extends StatefulWidget {
-  const _Boot({super.key});
+class MyApp extends ConsumerWidget {
+  const MyApp({super.key});
+
   @override
-  State<_Boot> createState() => _BootState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(routerProvider);
+
+    return MaterialApp.router(
+      title: 'AMK Driving School',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        primarySwatch: Colors.deepPurple,
+        scaffoldBackgroundColor: const Color(0xFF1a1a2e),
+        fontFamily: 'Padauk',
+      ),
+      routerConfig: router,
+    );
+  }
 }
 
-class _BootState extends State<_Boot> {
+// Loading indicator ပြပေးမယ့် screen
+class SplashScreen extends StatelessWidget {
+  const SplashScreen({super.key});
   @override
-  void initState() {
-    super.initState();
-    _go();
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
   }
+}
 
-  Future<void> _go() async {
-    final access = await Endpoints.access; // Session ❌ → Endpoints ✅
-    if (access != null) {
-      // already logged in → go home
-      if (mounted) context.go('/home');
-    } else {
-      if (mounted) context.go('/');
-    }
+// GoRouter ကို Riverpod stream နဲ့ ချိတ်ဆက်ပေးတဲ့ Helper Class
+class GoRouterRefreshStream extends ChangeNotifier {
+  GoRouterRefreshStream(Stream<dynamic> stream) {
+    notifyListeners();
+    stream.asBroadcastStream().listen((_) => notifyListeners());
   }
-
-  @override
-  Widget build(BuildContext context) =>
-      const Scaffold(body: Center(child: CircularProgressIndicator()));
 }

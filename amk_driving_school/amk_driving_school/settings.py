@@ -38,12 +38,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    'core',
-    'accounts',
+    'core.apps.CoreConfig',
+    'accounts.apps.AccountsConfig',
     'rest_framework',
     'corsheaders',
     'django_filters',
     'drf_yasg',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -139,12 +140,14 @@ AUTH_USER_MODEL = "accounts.User"
 REST_FRAMEWORK = {
   "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
   "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
+
+  'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 
 CELERY_BROKER_URL = "redis://localhost:6379/0"
 CELERY_TIMEZONE = "Asia/Yangon"
-from celery.schedules import crontab
+from celery.schedules import crontab # type: ignore
 CELERY_BEAT_SCHEDULE = {
   "teacher-digest-7am": {
     "task": "core.tasks.send_daily_teacher_digest",
@@ -168,3 +171,12 @@ SWAGGER_SETTINGS = {
     },
     "USE_SESSION_AUTH": False,
 }
+
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+# CSRF_TRUSTED_ORIGINS = [
+#     'http://localhost:37599',
+#     # အနာဂတ်မှာ တခြား port တွေနဲ့ run ရင်လည်း ဒီ list ထဲမှာ ထပ်ထည့်ပေးနိုင်ပါတယ်
+#     # ဥပမာ: 'http://localhost:3000'
+# ]

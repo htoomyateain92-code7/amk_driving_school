@@ -24,17 +24,44 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class MeSerializer(serializers.ModelSerializer):
+    has_bookings = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        # role ကို user ကိုယ်တိုင် မပြင်နိုင်အောင် read_only ပြု
         read_only_fields = ("role", "is_staff", "is_superuser")
-        fields = ("id", "username", "email", "first_name", "last_name", "role")
+        
+        # --- ဒီ fields list ထဲမှာ 'has_bookings' ကို ထည့်ပေးပါ ---
+        fields = ("id", "username", "email", "first_name", "last_name", "role", "has_bookings")
+
+    def get_has_bookings(self, user):
+        # user မှာ approved ဖြစ်နေတဲ့ booking အနည်းဆုံးတစ်ခုရှိမရှိ စစ်ဆေးပါ
+        return user.bookings.filter(status='approved').exists()
+
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    old_password = serializers.CharField(write_only=True, trim_whitespace=False)
-    new_password = serializers.CharField(write_only=True, trim_whitespace=False)
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
 
-    def validate_new_password(self, value):
-        password_validation.validate_password(value)
+    def validate_old_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Old password is not correct.")
         return value
+
+    def save(self, **kwargs):
+        user = self.context['request'].user
+        user.set_password(self.validated_data['new_password']) # type: ignore
+        user.save()
+        return user
+
+
+
+# ========================================================== #
+#  --- NEW SERIALIZER (To fix Flutter TypeError in Batch) --- #
+# ========================================================== #
+class SimpleUserSerializer(serializers.ModelSerializer):
+    """A simple serializer to represent a user with minimal details."""
+    class Meta:
+        model = User
+        fields = ['id', 'username']
