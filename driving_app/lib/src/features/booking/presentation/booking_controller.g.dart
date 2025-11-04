@@ -7,7 +7,7 @@ part of 'booking_controller.dart';
 // **************************************************************************
 
 String _$availableSessionsControllerHash() =>
-    r'06b9b62f379145dc8358a8f879a9d60053c6792b';
+    r'9191a14de91e588e885dacf81c52161e04834361';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -31,10 +31,10 @@ class _SystemHash {
 }
 
 abstract class _$AvailableSessionsController
-    extends BuildlessAutoDisposeAsyncNotifier<List<Session>> {
+    extends BuildlessAutoDisposeAsyncNotifier<List<SessionModel>> {
   late final int batchId;
 
-  FutureOr<List<Session>> build(
+  FutureOr<List<SessionModel>> build(
     int batchId,
   );
 }
@@ -45,7 +45,7 @@ const availableSessionsControllerProvider = AvailableSessionsControllerFamily();
 
 /// See also [AvailableSessionsController].
 class AvailableSessionsControllerFamily
-    extends Family<AsyncValue<List<Session>>> {
+    extends Family<AsyncValue<List<SessionModel>>> {
   /// See also [AvailableSessionsController].
   const AvailableSessionsControllerFamily();
 
@@ -85,7 +85,7 @@ class AvailableSessionsControllerFamily
 /// See also [AvailableSessionsController].
 class AvailableSessionsControllerProvider
     extends AutoDisposeAsyncNotifierProviderImpl<AvailableSessionsController,
-        List<Session>> {
+        List<SessionModel>> {
   /// See also [AvailableSessionsController].
   AvailableSessionsControllerProvider(
     int batchId,
@@ -116,7 +116,7 @@ class AvailableSessionsControllerProvider
   final int batchId;
 
   @override
-  FutureOr<List<Session>> runNotifierBuild(
+  FutureOr<List<SessionModel>> runNotifierBuild(
     covariant AvailableSessionsController notifier,
   ) {
     return notifier.build(
@@ -142,7 +142,7 @@ class AvailableSessionsControllerProvider
 
   @override
   AutoDisposeAsyncNotifierProviderElement<AvailableSessionsController,
-      List<Session>> createElement() {
+      List<SessionModel>> createElement() {
     return _AvailableSessionsControllerProviderElement(this);
   }
 
@@ -164,14 +164,14 @@ class AvailableSessionsControllerProvider
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 mixin AvailableSessionsControllerRef
-    on AutoDisposeAsyncNotifierProviderRef<List<Session>> {
+    on AutoDisposeAsyncNotifierProviderRef<List<SessionModel>> {
   /// The parameter `batchId` of this provider.
   int get batchId;
 }
 
 class _AvailableSessionsControllerProviderElement
     extends AutoDisposeAsyncNotifierProviderElement<AvailableSessionsController,
-        List<Session>> with AvailableSessionsControllerRef {
+        List<SessionModel>> with AvailableSessionsControllerRef {
   _AvailableSessionsControllerProviderElement(super.provider);
 
   @override

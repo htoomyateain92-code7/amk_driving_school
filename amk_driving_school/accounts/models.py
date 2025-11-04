@@ -34,3 +34,24 @@ class Profile(models.Model):
     def __str__(self):
         # User ရဲ့ role ကို တိုက်ရိုက်လှမ်းယူသုံးပါ
         return f"{self.user.username} ({self.user.role})"
+
+
+
+class InstructorAvailability(models.Model):
+    instructor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        limit_choices_to={'is_staff': True} # ဆရာဖြစ်သူကိုသာ ရွေးချယ်နိုင်ရန်
+    )
+    date = models.DateField()
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    class Meta:
+        verbose_name = "Instructor Availability"
+        # ဆရာတစ်ဦးရဲ့ တစ်ရက်တာ ရရှိနိုင်မှုကို တစ်ကြိမ်သာ သတ်မှတ်နိုင်မည်။
+        unique_together = ('instructor', 'date')
+        ordering = ['date', 'start_time']
+
+    def __str__(self):
+        return f"{self.instructor} - {self.date}"

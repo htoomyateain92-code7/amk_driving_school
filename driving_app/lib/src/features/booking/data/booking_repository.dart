@@ -13,12 +13,12 @@ class BookingRepository {
   BookingRepository(this._dio);
 
   // ดึง Session ทั้งหมดของ Batch ID ที่กำหนด
-  Future<List<Session>> fetchAvailableSessions(int batchId) async {
+  Future<List<SessionModel>> fetchAvailableSessions(int batchId) async {
     try {
       // Backend ของเราจะส่ง Session ทั้งหมดที่อยู่ใน Batch กลับมา
       final response = await _dio.get('/batches/$batchId/');
       final allSessions = (response.data['sessions'] as List)
-          .map((s) => Session.fromJson(s))
+          .map((s) => SessionModel.fromJson(s))
           .toList();
 
       // คัดกรองเอาเฉพาะ Session ที่ยังว่างอยู่ (available)
@@ -34,6 +34,8 @@ class BookingRepository {
     required List<int> sessionIds,
   }) async {
     try {
+      // 🛑 ပြင်ဆင်ချက်: Backend က "This field is required" error ပေးနေသောကြောင့်
+      // key name များကို 'course' နှင့် 'sessions' သို့ ပြန်ပြောင်းလိုက်ပါသည်။
       await _dio.post(
         '/bookings/',
         data: {
@@ -45,7 +47,9 @@ class BookingRepository {
       // ส่ง error message ที่ได้จาก Django กลับไป
       final errorMessage =
           e.response?.data.toString() ?? 'Failed to create booking';
-      throw errorMessage;
+      // 🛑 ပြင်ဆင်ချက်: Error ကို String အဖြစ် throw မလုပ်ဘဲ Exception object အဖြစ် throw လုပ်ခြင်း။
+      // ဒါမှ UI layer (Controller/Screen) က error type ကို မှန်ကန်စွာသိရှိပြီး message ကို ပြသနိုင်မှာပါ။
+      throw Exception(errorMessage);
     }
   }
 }

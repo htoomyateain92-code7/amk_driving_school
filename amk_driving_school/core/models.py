@@ -2,6 +2,7 @@ from django.utils import timezone
 from django.conf import settings
 from django.db import models
 from django.db.models import Q, Exists, OuterRef
+from math import ceil
 
 
 
@@ -10,8 +11,29 @@ class Course(models.Model):
     title = models.CharField(max_length=150)
     code  = models.CharField(max_length=30, unique=True)
     description = models.TextField(blank=True)
-    total_duration_hours = models.DecimalField(max_digits=4, decimal_places=2, default=3.0) # type: ignore # e.g., 3.0 for 3 hours, 1.5 for 1.5 hours
+    # စုစုပေါင်းကြာချိန် (နာရီဖြင့်)
+    total_duration_hours = models.DecimalField(max_digits=4, decimal_places=2, default=3.0)  # type: ignore
+    # တစ်ရက်တည်း သင်နိုင်သည့် အများဆုံး မိနစ် (သင်တန်းသားဘက်မှ ရွေးမည့် Session တစ်ခု၏ ကြာချိန်)
+    max_session_duration_minutes = models.PositiveIntegerField(
+        default=60,
+        help_text="တစ်ကြိမ်သင်တန်းအတွက် အများဆုံး ကြာချိန် (မိနစ်ဖြင့်)"
+    )
     is_public = models.BooleanField(default=True)
+
+    @property
+    def total_duration_minutes(self):
+        """စုစုပေါင်းကြာချိန်ကို မိနစ်ဖြင့် ပြန်ပေးခြင်း"""
+        return int(self.total_duration_hours * 60)
+
+    @property
+    def required_sessions(self):
+        """သင်တန်းပြီးရန် လိုအပ်သည့် Session အရေအတွက် တွက်ချက်ခြင်း"""
+        total_min = self.total_duration_minutes
+        max_session_min = self.max_session_duration_minutes
+        if total_min > 0 and max_session_min > 0:
+            # 180 / 90 = 2.0 -> 2 Sessions. 180 / 60 = 3.0 -> 3 Sessions.
+            return ceil(total_min / max_session_min)
+        return 0
 
     def __str__(self): return self.title
 

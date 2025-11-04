@@ -21,6 +21,11 @@ from django.shortcuts import get_object_or_404
 
 from core import serializers
 
+from accounts.models import User, InstructorAvailability
+from rest_framework.views import APIView # Custom Logic ရေးသားရန်
+from datetime import datetime, timedelta, time # Time တွက်ချက်မှုများအတွက်
+from .serializers import AvailableSlotSerializer
+
 class IsInstructorOrAdmin(permissions.BasePermission):
     def has_permission(self, req, view):  # type: ignore
         # roles သုံးမယ်ဆို: return req.user.is_authenticated and req.user.role in ("owner","admin","instructor")
@@ -251,29 +256,44 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         # Booking အသစ်လုပ်ရင် student ကို auto သတ်မှတ်
-        serializer.save(student=self.request.user)
+        booking_instance = serializer.save(student=self.request.user, status='pending')
 
-    @action(detail=True, methods=['post'])
+        # Sessions Status ကို 'booked' အဖြစ် ပြောင်းလဲခြင်း
+        sessions_to_update = serializer.validated_data.get('sessions')
+        session_ids = [s.id for s in sessions_to_update]
+
+        # Sessions များကို bulk update လုပ်ခြင်း
+        Session.objects.filter(id__in=session_ids).update(status='booked')
+
+        # Note: Approved လုပ်တဲ့ action ထဲမှာတော့ 'booked' ကို 'approved' ဖြစ်မှ update လုပ်တာ ပိုကောင်းပါတယ်
+        # အခုကတော့ စာရင်းသွင်းပြီးတာနဲ့ ချက်ချင်း 'booked' အဖြစ် သတ်မှတ်လိုက်ပါတယ်။
+
+        return booking_instance
+
+    @action(detail=True, methods=['post'], permission_classes=[IsInstructorOrAdmin]) # Permission check ထည့်လိုက်သည်
     def approve(self, request, pk=None):
         booking = self.get_object()
-
-
+        
+        # Approved လုပ်လိုက်ရင် Booking ရဲ့ Status ကို 'approved' ပြောင်းပါ
         booking.status = 'approved'
         booking.save()
 
-        # Booking ထဲက session အားလုံးရဲ့ status ကို 'booked' လို့ပြောင်းပါ
-        booking.sessions.all().update(status='booked')
-
+        # Sessions status ကို 'booked' (သို့မဟုတ် 'scheduled' ကို ပြန်ပြောင်းခြင်း)
+        # လက်ရှိ logic အရ 'booked' ကို ပြောင်းပြီးသားဖြစ်လို့ ဒီနေရာမှာ ထပ် update လုပ်စရာမလိုပါဘူး။
+        # သို့သော် Sessions များကိုလည်း status="scheduled" သို့ ပြောင်းပေးနိုင်သည် (သင့် business logic အပေါ် မူတည်သည်)
+        # ဥပမာ- booking.sessions.all().update(status='scheduled')
+        
         return Response({'status': 'booking approved'})
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], permission_classes=[IsInstructorOrAdmin]) # Permission check ထည့်လိုက်သည်
     def reject(self, request, pk=None):
         booking = self.get_object()
-        # TODO: Add permission check
         booking.status = 'rejected'
         booking.save()
-        # Note: Rejected booking's sessions are made available again if needed,
-        # but for simplicity we'll leave them as is.
+        
+        # Reject လုပ်ရင် Sessions တွေကို 'available' (scheduled) အဖြစ် ပြန်ပြောင်းပါ
+        booking.sessions.all().update(status='available')
+        
         return Response({'status': 'booking rejected'})
 
 
@@ -465,3 +485,72 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 
+class AvailableSlotsView(APIView):
+    """
+    Batch တစ်ခုအတွက် Course ရဲ့ max_session_duration_minutes ကို အခြေခံပြီး 
+    ရရှိနိုင်တဲ့ Session Slots များကို တွက်ချက်ပေးသည် (Conflict မရှိသော Sessions များကို ပြန်ပေးသည်)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        # Query parameters များ ရယူခြင်း
+        batch_id = request.query_params.get('batch_id')
+        
+        if not batch_id:
+            return Response({"error": "batch_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Course model မှာ max_session_duration_minutes ပါပြီးသားလို့ ယူဆပါတယ်
+            batch = Batch.objects.select_related('course').get(id=batch_id)
+            course = batch.course
+        except Batch.DoesNotExist:
+            return Response({"error": "Batch not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        session_duration = course.max_session_duration_minutes
+        instructor_id = batch.instructor_id # type: ignore
+        start_date = batch.start_date
+        end_date = batch.end_date
+        
+        all_available_slots = []
+        current_date = start_date
+
+        # နေ့ရက်တစ်ခုချင်းစီကို စစ်ဆေးခြင်း
+        while current_date <= end_date:
+            # TODO: ဤနေရာတွင် InstructorAvailability Model ကို အသုံးပြုနိုင်သည်
+            # (သို့သော် လက်ရှိ models.py တွင် မပါဝင်သေးသောကြောင့် Fixed Time ယူဆပါမည်)
+            
+            # Fixed Time Window: နံနက် ၉:၀၀ မှ ညနေ ၅:၀၀
+            # Note: timezone-aware ဖြစ်စေရန် settings.py ကို စစ်ဆေးပါ
+            day_start_time = datetime.combine(current_date, time(hour=9))
+            day_end_time = datetime.combine(current_date, time(hour=17))
+            
+            current_slot_start = day_start_time
+
+            while current_slot_start + timedelta(minutes=session_duration) <= day_end_time:
+                current_slot_end = current_slot_start + timedelta(minutes=session_duration)
+                
+                # Conflict စစ်ဆေးခြင်း: ဤ Batch အတွင်းရှိ sessions များ သို့မဟုတ် အခြား Batch များမှ 
+                # (batch_id ကိုသာ စစ်ပါမည်၊ instructor တစ်ဦးတည်းရဲ့ sessions များစွာကို စစ်လိုပါက logic ကို ပြင်ရပါမည်)
+                is_booked = Session.objects.filter(
+                    batch=batch, # ဤ Batch အတွက်သာ စစ်ဆေးခြင်း
+                    start_dt__lt=current_slot_end,
+                    end_dt__gt=current_slot_start,
+                    status__in=['booked', 'completed']
+                ).exists()
+
+                if not is_booked:
+                    all_available_slots.append({
+                        "date": current_date,
+                        "start_time": current_slot_start.time(),
+                        "end_time": current_slot_end.time(),
+                        "duration_minutes": session_duration,
+                        "instructor_id": instructor_id,
+                        "batch_id": batch_id
+                    })
+                
+                current_slot_start = current_slot_end
+
+            current_date += timedelta(days=1)
+
+        serializer = AvailableSlotSerializer(all_available_slots, many=True)
+        return Response(serializer.data)

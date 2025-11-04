@@ -44,6 +44,8 @@ urlpatterns = [
     # 2. Main API Endpoints
     path('api/v1/', include('core.urls')),
 
+    path('api/v1/', include('dashboard.urls')),
+
     # 3. JWT Token Authentication Endpoints
     # url ထဲမှာ extend_schema နဲ့ decorate လုပ်စရာမလိုတော့ပါဘူး
     path(

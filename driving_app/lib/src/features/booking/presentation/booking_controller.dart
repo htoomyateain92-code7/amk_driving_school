@@ -10,7 +10,7 @@ part 'booking_controller.g.dart';
 @riverpod
 class AvailableSessionsController extends _$AvailableSessionsController {
   @override
-  FutureOr<List<Session>> build(int batchId) {
+  FutureOr<List<SessionModel>> build(int batchId) {
     return ref.read(bookingRepositoryProvider).fetchAvailableSessions(batchId);
   }
 }

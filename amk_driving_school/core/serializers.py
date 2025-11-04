@@ -8,6 +8,19 @@ from .models import Article, Booking, Course, Batch, Notification, Option, Quest
 from django.db.models import Q
 from .models import  Session
 from core import models
+from django.utils import timezone
+import pytz
+
+
+
+
+
+
+class TimezoneAwareSerializer(serializers.ModelSerializer):
+    start_dt = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S%z', default_timezone= # type: ignore
+                                         pytz.timezone('Asia/Yangon'))
+    end_dt = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S%z', default_timezone= # type: ignore
+                                       pytz.timezone('Asia/Yangon'))
 
 
 
@@ -35,14 +48,30 @@ class CourseListSerializer(serializers.ModelSerializer):
         model = Course
         fields = ['id', 'title', 'code', 'description']
 
+# class CourseDetailSerializer(serializers.ModelSerializer):
+#     """Course တစ်ခုရဲ့ အသေးစိတ်ကိုပြ하기အတွက် (nested batches ပါဝင်)"""
+#     # ဒီ course နဲ့ဆိုင်တဲ့ batch တွေကိုပြတဲ့အခါ အပေါ်က ရိုးရှင်းတဲ့ BatchSerializer ကိုသုံးမယ်
+#     batches = BatchSerializer(many=True, read_only=True)
+
+#     class Meta:
+#         model = Course
+#         fields = ['id', 'title', 'code', 'description', 'is_public', 'total_duration_hours', 'batches']
+
 class CourseDetailSerializer(serializers.ModelSerializer):
     """Course တစ်ခုရဲ့ အသေးစိတ်ကိုပြ하기အတွက် (nested batches ပါဝင်)"""
-    # ဒီ course နဲ့ဆိုင်တဲ့ batch တွေကိုပြတဲ့အခါ အပေါ်က ရိုးရှင်းတဲ့ BatchSerializer ကိုသုံးမယ်
     batches = BatchSerializer(many=True, read_only=True)
+    
+    # ဤ Fields များကို ထပ်ထည့်ရန် လိုအပ်သည်
+    required_sessions = serializers.IntegerField(read_only=True) 
+    max_session_duration_minutes = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Course
-        fields = ['id', 'title', 'code', 'description', 'is_public', 'total_duration_hours', 'batches']
+        fields = [
+            'id', 'title', 'code', 'description', 'is_public', 
+            'total_duration_hours', 'required_sessions', 'max_session_duration_minutes', # ထပ်ထည့်လိုက်သော Fields များ
+            'batches'
+        ]
 
 
 class SessionSer(serializers.ModelSerializer):
@@ -193,3 +222,17 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = ['id', 'title', 'body', 'is_read', 'created_at']
+
+
+
+
+class AvailableSlotSerializer(serializers.Serializer):
+    """
+    AvailableSlotsView ကနေ တွက်ချက်ပြီး ပြန်ပေးမယ့် Time Slots များအတွက်
+    """
+    date = serializers.DateField(format="%Y-%m-%d", help_text="Session စမည့်နေ့စွဲ") # type: ignore
+    start_time = serializers.TimeField(format="%H:%M", help_text="Session စမည့်အချိန်") # type: ignore
+    end_time = serializers.TimeField(format="%H:%M", help_text="Session ပြီးဆုံးမည့်အချိန်") # type: ignore
+    duration_minutes = serializers.IntegerField(help_text="Session ကြာချိန် (မိနစ်ဖြင့်)")
+    instructor_id = serializers.IntegerField(help_text="ဆရာရဲ့ ID")
+    batch_id = serializers.IntegerField(help_text="ဘိုကင်လုပ်မည့် Batch ID")
