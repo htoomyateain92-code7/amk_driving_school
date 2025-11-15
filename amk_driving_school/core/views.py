@@ -1,11 +1,13 @@
 # core/views.py
 from datetime import date
+from optparse import Option
 from django.utils import timezone
+from dashboard.serializers import QuestionSerializer
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample
-from .models import Article, Booking, Course, Batch, Quiz, Session, DeviceToken,  Submission
+from .models import Answer, Article, Booking, Course, Batch, Question, Quiz, Session, DeviceToken,  Submission
 from .serializers import (
     ArticleSer, BatchDetailSerializer, BatchSerializer, BookingCreateSerializer, BookingListDetailSerializer,
     CourseDetailSerializer, CourseListSerializer, NotificationSerializer, QuestionPublicSer, QuizDetailSer,
@@ -26,6 +28,9 @@ from rest_framework.views import APIView # Custom Logic ရေးသားရန
 from datetime import datetime, timedelta, time # Time တွက်ချက်မှုများအတွက်
 from .serializers import AvailableSlotSerializer
 
+from core.utils import send_fcm_notification
+from core.models import Booking, Notification
+
 class IsInstructorOrAdmin(permissions.BasePermission):
     def has_permission(self, req, view):  # type: ignore
         # roles သုံးမယ်ဆို: return req.user.is_authenticated and req.user.role in ("owner","admin","instructor")
@@ -44,7 +49,7 @@ class IsAdminOrReadOnly(permissions.BasePermission):
 
 
 class CourseViewSet(viewsets.ModelViewSet):
-    queryset = Course.objects.all().order_by("title")
+    queryset = Course.objects.all()
     # serializer_class = CourseSer
     permission_classes = [permissions.AllowAny]
 
@@ -296,62 +301,8 @@ class BookingViewSet(viewsets.ModelViewSet):
         
         return Response({'status': 'booking rejected'})
 
-
-
-# class EnrollmentViewSet(viewsets.ModelViewSet):
-#     queryset = Enrollment.objects.all()
-#     permission_classes = [permissions.IsAuthenticated]
-#     serializer_class = EnrollmentCreateSer
-
-#     def get_queryset(self):
-#         """
-#         Students can only see their own enrollments.
-#         Staff can see all enrollments.
-#         """
-#         user = self.request.user
-#         if user.is_staff:
-#             return Enrollment.objects.select_related('batch', 'user').all()
-#         return Enrollment.objects.select_related('batch').filter(user=user)
-
-#     def perform_create(self, serializer):
-#         """
-#         Automatically assign the current user to the enrollment
-#         and prevent duplicate enrollments.
-#         """
-#         batch = serializer.validated_data.get('batch')
-#         user = self.request.user
-
-#         # user က ဒီ batch ကို enroll လုပ်ပြီးသားလား အရင်စစ်ဆေးပါ
-#         if Enrollment.objects.filter(user=user, batch=batch).exists():
-#             # လုပ်ပြီးသားဆိုရင် error message ပြန်ပေးပါ
-#             raise serializers.ValidationError("You are already enrolled in this batch.") # type: ignore
-
-#         # enroll မလုပ်ရသေးမှ user ကို သတ်မှတ်ပြီး save ပါ
-#         serializer.save(user=user)
-
-
-#     @action(detail=False, methods=['get'], url_path='my-enrollments')
-#     def my_enrollments(self, request):
-#         """Return a list of batches the current user is enrolled in."""
-#         user = request.user
-#         # status='active' အစား 'approved' ကိုပြောင်းပါ
-#         enrollments = Enrollment.objects.filter(user=user, status='approved')
-#         batches = [e.batch for e in enrollments]
-#         serializer = BatchSerializer(batches, many=True)
-#         return Response(serializer.data)
-
-
-
-
-
-
-
-
-
-
-
 class QuizViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Quiz.objects.filter(is_published=True)
+    queryset = Quiz.objects.all()
     serializer_class = QuizDetailSer
     permission_classes = [permissions.AllowAny]
 
@@ -366,7 +317,37 @@ class QuizViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "Authentication credentials were not provided."}, status=status.HTTP_401_UNAUTHORIZED)
         quiz = self.get_object()
         sub = Submission.objects.create(quiz=quiz, student=request.user)
-        return Response({"submission_id": sub.id})
+        return Response({"submission_id": sub.id}) # type: ignore
+        
+    @extend_schema(
+        summary="Get all questions for a specific quiz (Public)",
+        responses={200: QuestionPublicSer(many=True)}
+    )
+    @action(detail=True, methods=['get'])
+    def questions(self, request, pk=None):
+        try:
+            quiz = self.get_object() # pk ဖြင့် Quiz object ကို ရယူ
+            questions = Question.objects.filter(quiz=quiz).order_by('pk') # 💡 စီထားခြင်း
+            
+            # 🛑 [FIX]: QuestionPublicSer ကို မှန်ကန်စွာ အသုံးပြုခြင်း
+            # QuestionPublicSer သည် options နှင့် order_items ကို တွက်ချက်ပေးမည်။
+            serializer = QuestionPublicSer(questions, many=True) 
+            
+            # 💡 [FIX]: quiz_title Field ၏ နာမည်ကို Model တွင် 'title' (သို့မဟုတ်) 'quiz_title' အပေါ်မူတည်၍ ပြင်ဆင်ပါ။
+            quiz_title = getattr(quiz, 'title', quiz.pk) # Model မှာ 'title' ရှိရင် ယူ၊ မရှိရင် pk ယူ
+            
+            return Response({
+                'id': quiz.pk,
+                'quiz_title': quiz_title, # 💡 'quiz_title' အဖြစ် ပြန်ပို့သည်
+                'questions': serializer.data,
+            })
+            
+        except Quiz.DoesNotExist:
+            return Response({'detail': 'Quiz not found.'}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            # 🛑 [IMPORTANT]: 500 Error ဖြစ်ရင် ဒီနေရာကနေ Log ထုတ်ပြီး စစ်ဆေးနိုင်ပါတယ်။
+            print(f"Error fetching questions: {e}")
+            return Response({'detail': f'Server error: {e}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class SubmissionViewSet(viewsets.GenericViewSet):
@@ -399,7 +380,7 @@ class SubmissionViewSet(viewsets.GenericViewSet):
             opt_id = request.data.get("selected_option_id")
             if not opt_id:
                 return Response({"error": "selected_option_id is required for MCQ"}, status=400)
-            opt = get_object_or_404(Option, id=opt_id, question=q)
+            opt = get_object_or_404(Option, id=opt_id, question=q) # type: ignore
             Answer.objects.update_or_create(
                 submission=sub, question=q,
                 defaults={"selected_option": opt, "given_order": None})
@@ -554,3 +535,27 @@ class AvailableSlotsView(APIView):
 
         serializer = AvailableSlotSerializer(all_available_slots, many=True)
         return Response(serializer.data)
+
+
+
+def approve_booking_view(request, booking_id):
+    booking = Booking.objects.get(id=booking_id)
+    
+    if booking.status != "approved":
+        booking.status = "approved"
+        booking.save()
+
+        # 1. Database မှာ Notification ရေးသွင်းခြင်း
+        Notification.objects.create(
+            user=booking.student,
+            title="သင်တန်း စာရင်းသွင်းမှု အတည်ပြုပြီး",
+            body=f"သင်၏ {booking.course.title} သင်တန်းကို အောင်မြင်စွာ စာရင်းသွင်းပြီးပါပြီ။",
+        )
+        
+        # 2. Device သို့ FCM ပို့ခြင်း
+        send_fcm_notification(
+            user=booking.student,
+            title="အတည်ပြုပြီး",
+            body=f"{booking.course.title} သင်တန်း စတင်တက်ရောက်နိုင်ပါပြီ။",
+            data={"type": "booking_approved", "course_id": str(booking.course.id)} # Flutter တွင် ကိုင်တွယ်ရန် # type: ignore
+        )

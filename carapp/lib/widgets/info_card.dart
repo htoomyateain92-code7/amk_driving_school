@@ -16,6 +16,8 @@ class InfoCard extends StatelessWidget {
       blurAmount: 5.0,
       borderRadius: 15.0,
       opacity: 0.1,
+
+      padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
       child: Padding(
         padding: const EdgeInsets.all(kDefaultPadding),
         child: Row(

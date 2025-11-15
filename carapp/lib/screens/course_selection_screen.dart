@@ -1,14 +1,15 @@
-// lib/screens/course_selection_screen.dart (Updated)
-
+import 'package:carapp/models/course_model.dart';
+import 'package:carapp/screens/blog_detail_screen.dart';
 import 'package:carapp/screens/course_detail_screen.dart';
 import 'package:carapp/screens/login_screen.dart';
-import 'package:carapp/widgets/custom_glass_app_bar.dart';
+import 'package:carapp/screens/quiz_detail_screen.dart';
+import 'package:carapp/screens/student_dashboard_screen.dart';
+import 'package:carapp/services/api_service.dart';
+import 'package:carapp/widgets/course_item.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../constants/constants.dart';
-import '../widgets/course_item.dart';
-import '../widgets/section_card.dart';
 
-// StatefulWidget အဖြစ် ပြောင်းလဲပါ
 class CourseSelectionScreen extends StatefulWidget {
   const CourseSelectionScreen({super.key});
 
@@ -17,184 +18,369 @@ class CourseSelectionScreen extends StatefulWidget {
 }
 
 class _CourseSelectionScreenState extends State<CourseSelectionScreen> {
-  // ရွေးချယ်ထားသော ဘာသာစကား (စတင်ချိန်မှာ မြန်မာကို ရွေးထားသည်)
-  String _selectedLanguage = 'MM'; // 'MM' for Myanmar, 'EN' for English
+  late ApiService _apiService;
+
+  // 💡 API Data များကို စုစည်းထားသည့် Future
+  Future<Map<String, dynamic>>? _dataFuture;
+
+  // 💡 Data Structure: {'courses': List<Map>, 'quizzes': List<Map>, 'blogs': List<Map>}
 
   @override
-  Widget build(BuildContext context) {
-    final String loginButtonText = _selectedLanguage == 'MM'
-        ? 'ဝင်/အကောင့်ဖွင့်'
-        : 'Login / Register';
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _apiService = Provider.of<ApiService>(context);
+    // 💡 Data Future ကို စတင် Load လုပ်သည်
+    if (_dataFuture == null) {
+      _dataFuture = _fetchData() as Future<Map<String, dynamic>>?;
+    }
+  }
 
-    final Widget customLoginButton = Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10), // ဘောင်ကွေးခြင်း
-        gradient: LinearGradient(
-          // ပုံထဲကလို Gradient Background
-          colors: [
-            kGradientVia.withOpacity(0.8),
-            kGradientEnd.withOpacity(0.8),
-          ],
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
+  // 💡 API မှ Course, Quiz, Blog Data များ တစ်ပြိုင်နက် ခေါ်ယူရန် Function
+  Future<Map<String, dynamic>> _fetchData() async {
+    // Public Page ဖြစ်သောကြောင့် isPublic: true ပို့ရန်
+    const bool isPublic = true;
+
+    // 💡 Future.wait ကို အသုံးပြု၍ API Call များကို တစ်ပြိုင်နက် ခေါ်ယူသည်
+    final results = await Future.wait([
+      _apiService.fetchCourses(isPublic: isPublic),
+      _apiService.fetchQuizzes(),
+      _apiService.fetchBlogs(),
+    ]);
+
+    // results [0] = Courses, [1] = Quizzes, [2] = Blogs
+    return {'courses': results[0], 'quizzes': results[1], 'blogs': results[2]};
+  }
+
+  // 💡 Navigation Functions (ယခင်အတိုင်းရှိနေသည်)
+  void _navigateToDashboard() {
+    if (_apiService.isLoggedIn) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (context) => const StudentDashboardScreen()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Dashboard ကို သွားရန် အကောင့်ဝင်ရန် လိုအပ်ပါသည်။'),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: kGradientEnd.withOpacity(0.5),
-            blurRadius: 10,
-            spreadRadius: 2,
-            offset: const Offset(0, 2),
-          ),
-        ],
+      );
+    }
+  }
+
+  // 💡 Login/Logout Button ကို သွားမည့် function (Auth Screen)
+  void _navigateToAuthScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+    );
+    // print('Navigate to Login/Signup Screen');
+  }
+
+  // 💡 သင်တန်း စာရင်းသွင်းရန် (သို့) အသေးစိတ်ကြည့်ရန် Function
+  void _navigateToCourseDetail(String courseTitle, int courseId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) =>
+            // 🛑 [FIX]: CourseDetailScreen ၏ Constructor ကို စစ်ဆေးပါ။
+            // title: '' ပို့ခြင်းသည် Error ကို ဖြေရှင်းပေးသော်လည်း အသုံးမဝင်ပါ။
+            // ယခု title: courseTitle ကို ပို့လိုက်ပါမည်။
+            CourseDetailScreen(courseId: courseId, title: courseTitle),
       ),
-      child: TextButton.icon(
-        onPressed: () {
-          Navigator.of(
-            context,
-          ).push(MaterialPageRoute(builder: (context) => const LoginScreen()));
-        },
-        icon: const Icon(Icons.logout, color: Colors.white, size: 18),
-        label: Text(
-          loginButtonText,
-          style: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        style: TextButton.styleFrom(
-          backgroundColor: Colors.transparent, // Background ကို ပွင့်လင်းထား
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$courseTitle အတွက် စာရင်းသွင်းရန် စာမျက်နှာကို သွားပါမည်။ (ID: $courseId)',
         ),
       ),
     );
+  }
+
+  // 💡 Quiz Detail Screen သို့ သွားရန် Function
+  void _navigateToQuizDetail(String quizTitle, int quizId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => QuizDetailScreen(
+          quizId: quizId,
+          quizTitle: quizTitle,
+          // title ကို မလိုအပ်ပါက ဖယ်နိုင်သည်၊ လိုအပ်ပါက quizTitle ကို ပေးနိုင်သည်။
+          title: quizTitle,
+        ),
+      ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$quizTitle စာမေးပွဲ စတင်ဖြေဆိုရန် စာမျက်နှာကို သွားပါမည်။ (ID: $quizId)',
+        ),
+      ),
+    );
+  }
+
+  // 💡 Blog Detail Screen သို့ သွားရန် Function
+  void _navigateToBlogDetail(String blogTitle, int blogId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => BlogDetailScreen(
+          title: blogTitle, // ✅ title parameter ကို blogTitle ဖြင့် ပေးပို့သည်
+          blogId: blogId,
+          // 🛑 [FIX]: blogTitle parameter ကို ထပ်မံပေးပို့ရန် မလိုတော့ပါ
+          // blogTitle: 'title', // ဤလိုင်းကို ဖယ်လိုက်ပါ
+        ),
+      ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$blogTitle အကြောင်းအရာကို အသေးစိတ် ကြည့်ရှုပါမည်။ (ID: $blogId)',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isLoggedIn = _apiService.isLoggedIn;
 
     return Scaffold(
-      appBar: CustomGlassAppBar(
-        selectedLanguage: _selectedLanguage,
-        onLanguageChanged: (String? newValue) {
-          if (newValue != null) {
-            setState(() {
-              _selectedLanguage = newValue;
-              print('Language changed to: $_selectedLanguage');
-            });
-          }
-        },
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 💡 ပုံထဲက Logo အသေးစားကို ဒီနေရာမှာ ထားပါ
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10.0),
-              child: Image.asset(
-                'assets/amk.png',
-                width: 100,
-                height: 50,
-              ), // အရောင်ပြောင်းထားသော Logo သို့မဟုတ် Icon
-            ),
-            const SizedBox(width: 10),
-
-            // 💡 App Title (ကားသင်တန်း ကျောင်း)
-          ],
-        ),
+      appBar: AppBar(
+        title: const Text('သင်တန်းများ (Courses)'),
+        backgroundColor: kGradientStart,
+        elevation: 0,
         actions: [
-          // 💡 Login/Logout Button ကို actions အဖြစ် ပို့ပေးပါ
-          TextButton.icon(
+          // ... (App Bar Actions Code - မပြောင်းလဲပါ) ...
+          IconButton(
+            icon: const Icon(Icons.notifications_none),
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (context) => const LoginScreen()),
-              );
+              /* Handle Notifications */
             },
-            icon: const Icon(Icons.logout, color: Colors.white, size: 18),
-            label: Text(
-              loginButtonText,
-              style: const TextStyle(color: Colors.white),
-            ),
+            color: Colors.white,
           ),
+          if (isLoggedIn)
+            GestureDetector(
+              onTap: _navigateToDashboard,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
+                child: Row(
+                  children: [
+                    Icon(Icons.person, color: Colors.white, size: 20),
+                    SizedBox(width: 4),
+                    Text(
+                      'student',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            TextButton(
+              onPressed: _navigateToAuthScreen,
+              child: const Text(
+                'ဝင်/အကောင့်ဖွင့်မည်',
+                style: TextStyle(
+                  color: Colors.cyanAccent,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          const SizedBox(width: 8),
         ],
-        loginButton: customLoginButton,
       ),
-
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [kGradientStart, kGradientVia, kGradientEnd],
-            stops: [0.0, 0.5, 1.0],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
         ),
-        child: CustomScrollView(
-          slivers: <Widget>[
-            // 1. App Bar (SliverAppBar) ကို ပြင်ဆင်ပါ
-            // _buildAppBar(), // App Bar ကို Method အသစ်နဲ့ ခေါ်ပါမည်
-            SliverPadding(
-              padding: const EdgeInsets.all(kDefaultPadding),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  // ... (ကျန်တဲ့ UI အစိတ်အပိုင်းတွေ ဒီအတိုင်းထားပါ)
-                  _buildBanner(),
-                  const SizedBox(height: kDefaultPadding * 2),
-                  _buildCoursesSection(),
-                  const SizedBox(height: kDefaultPadding * 2),
-                  _buildQuizAndBlogSection(context),
-                  const SizedBox(height: kDefaultPadding * 4),
-                ]),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+        // 💡 [FIX]: FutureBuilder ကို အသုံးပြု၍ API Data ကို ပြသခြင်း
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: _dataFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.cyanAccent),
+              );
+            } else if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Data ခေါ်ယူရာတွင် အမှား: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.redAccent),
+                ),
+              );
+            } else if (snapshot.hasData) {
+              final data = snapshot.data!;
+              // API မှရလာသော List များကို ထုတ်ယူခြင်း
+              final List courses = data['courses'] ?? [];
+              final List quizzes = data['quizzes'] ?? [];
+              final List blogs = data['blogs'] ?? [];
 
-  // --- App Bar Widget (Language Selector ထည့်သွင်းထားသည်) ---
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(kDefaultPadding),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: kDefaultPadding),
+                      child: Text(
+                        'သင်မောင်းနှင်မည့် ခရီးလမ်းအတွက် အသင့်ပြင်ပါ!!',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
 
-  // --- Language Selector Widget ---
-  Widget _buildLanguageSelector() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedLanguage,
-          icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
-          style: const TextStyle(color: Colors.white, fontSize: 14),
-          dropdownColor: kGradientStart.withOpacity(
-            0.9,
-          ), // Glass Card အရောင်နဲ့ နီးစပ်အောင်
-          onChanged: (String? newValue) {
-            if (newValue != null) {
-              setState(() {
-                _selectedLanguage = newValue;
-                // ဘာသာစကား ပြောင်းလဲမှု Logic ကို ဒီနေရာမှာ ထည့်နိုင်ပါတယ်
-                print('Language changed to: $_selectedLanguage');
-              });
+                    // --- Courses Section (Dynamic) ---
+                    if (courses.isNotEmpty)
+                      ...courses.map((courseItem) {
+                        final Course course = courseItem as Course;
+                        // 💡 API Data ဖြင့် _buildCourseCard ကို ခေါ်ဆိုခြင်း
+                        return Padding(
+                          padding: const EdgeInsets.only(
+                            bottom: kDefaultPadding,
+                          ),
+                          child: _buildCourseCard(
+                            title: course.title ?? '', // ✅ Dot Notation
+                            price: course.price ?? '', // ✅ Dot Notation
+                            description:
+                                course.description ?? '', // ✅ Dot Notation
+                            color: Color(course.color), // ✅ Dot Notation
+                            courseId: course.id, // ✅ Dot Notation
+                          ),
+                        );
+                      }).toList(),
+
+                    const SizedBox(height: kDefaultPadding * 2),
+
+                    // --- Quizzes Section (Dynamic) ---
+                    if (quizzes.isNotEmpty)
+                      _buildSectionHeader('Quiz စစ်မေးခွန်းများ (Quizzes)'),
+                    if (quizzes.isNotEmpty)
+                      ...quizzes.map((quiz) {
+                        // 💡 API Data ဖြင့် _buildQuizItem ကို ခေါ်ဆိုခြင်း
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: _buildQuizItem(
+                            quiz.title ?? '',
+                            quizId: quiz.id,
+                          ),
+                        );
+                      }).toList(),
+
+                    const SizedBox(height: kDefaultPadding * 2),
+
+                    // --- Blogs Section (Dynamic) ---
+                    if (blogs.isNotEmpty)
+                      _buildSectionHeader('Blog များ (Blogs)'),
+                    if (blogs.isNotEmpty)
+                      ...blogs.map((blog) {
+                        // 💡 API Data ဖြင့် _buildBlogItem ကို ခေါ်ဆိုခြင်း
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8.0),
+                          child: _buildBlogItem(
+                            blog.title ?? '',
+                            blogId: blog.id,
+                          ),
+                        );
+                      }).toList(),
+                  ],
+                ),
+              );
+            } else {
+              return const Center(
+                child: Text(
+                  'Data မရှိပါ',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              );
             }
           },
-          items: <DropdownMenuItem<String>>[
-            DropdownMenuItem(
-              value: 'MM',
-              child: Row(
-                children: const [
-                  Text('🇲🇲', style: TextStyle(fontSize: 20)), // မြန်မာအလံ
-                  SizedBox(width: 8),
-                  Text('မြန်မာ', style: TextStyle(color: Colors.white)),
-                ],
+        ),
+      ),
+    );
+  }
+
+  // --- Utility Widgets (မပြောင်းလဲပါ) ---
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: kDefaultPadding / 2),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCourseCard({
+    required String title,
+    required String price,
+    required String description,
+    required Color color,
+    required int courseId,
+  }) {
+    // ... (UI Code သည် ယခင်အတိုင်း မှန်ကန်နေပါသည်) ...
+    return Card(
+      color: Colors.white.withOpacity(0.1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: Padding(
+        padding: const EdgeInsets.all(kDefaultPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: color,
               ),
             ),
-            DropdownMenuItem(
-              value: 'EN',
-              child: Row(
-                children: const [
-                  Text(
-                    '🇺🇸',
-                    style: TextStyle(fontSize: 20),
-                  ), // အမေရိကန်အလံ (အင်္ဂလိပ်ဘာသာအတွက်)
-                  SizedBox(width: 8),
-                  Text('English', style: TextStyle(color: Colors.white)),
-                ],
+            const SizedBox(height: 5),
+            Text(
+              price,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              description,
+              style: const TextStyle(color: Colors.white70),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 15),
+            ElevatedButton(
+              onPressed: () {
+                _navigateToCourseDetail(title, courseId);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: color,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text(
+                'စာရင်းသွင်းမည်',
+                style: TextStyle(color: Colors.white),
               ),
             ),
           ],
@@ -203,191 +389,40 @@ class _CourseSelectionScreenState extends State<CourseSelectionScreen> {
     );
   }
 
-  // 3. Courses Section (Responsive Grid)
-  Widget _buildCoursesSection() {
-    // 💡 ပြဿနာ (၁) ဖြေရှင်းရန်: Data Structure ကို Map<String, dynamic> ပြောင်းပြီး Localization Data ထည့်ပါ။
-    final List<Map<String, dynamic>> courses = [
-      {
-        'duration': {'MM': '၁၀ ရက်', 'EN': '10 days'},
-        'price': {'MM': '၅၀၀,၀၀၀ ကျပ်', 'EN': '500,000MMKs'},
-        // 💡 Localization Data ထည့်ခြင်း
-        'title': {
-          'MM': 'အခြေခံ ကားမောင်းသင်တန်း',
-          'EN': 'Basic Driving Course',
-        },
-        'button': {'MM': 'စာရင်းသွင်းရန်', 'EN': 'Enroll Now'},
-      },
-      {
-        'duration': {'MM': '၈ ရက်', 'EN': '8 days'},
-        'price': {'MM': '၈၀၀,၀၀၀ ကျပ်', 'EN': '800,000MMKs'},
-        'title': {
-          'MM': 'အဆင့်မြင့် မော်တော်ယာဉ်',
-          'EN': 'Advanced Vehicle Training',
-        },
-        'button': {'MM': 'စာရင်းသွင်းရန်', 'EN': 'Enroll Now'},
-      },
-      {
-        'duration': {'MM': '၅ ရက်', 'EN': '5 days'},
-        'price': {'MM': '၃၀၀,၀၀၀ ကျပ်', 'EN': '300,000MMKs'},
-        'title': {
-          'MM': 'ယာဉ်စည်းကမ်း လမ်းစည်းကမ်း',
-          'EN': 'Traffic Rules & Regulations',
-        },
-        'button': {'MM': 'စာရင်းသွင်းရန်', 'EN': 'Enroll Now'},
-      },
-    ];
-
-    // MM/EN ပေါ်မူတည်ပြီး ခေါင်းစဉ် ပြောင်းရန် (ဒါက အလုပ်လုပ်ပြီးသားပါ)
-    final String sectionTitle = _selectedLanguage == 'MM'
-        ? 'သင်တန်းများ (Courses)'
-        : 'Courses';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          sectionTitle,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+  Widget _buildQuizItem(String title, {required int quizId}) {
+    // ... (UI Code သည် ယခင်အတိုင်း မှန်ကန်နေပါသည်) ...
+    return Card(
+      color: Colors.white.withOpacity(0.05),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: ListTile(
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        trailing: const Icon(
+          Icons.arrow_forward_ios,
+          color: Colors.white54,
+          size: 16,
         ),
-        const SizedBox(height: kDefaultPadding),
-
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final int crossAxisCount = constraints.maxWidth >= 900
-                ? 3
-                : (constraints.maxWidth > kMobileBreakpoint ? 2 : 1);
-
-            return GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: crossAxisCount,
-                crossAxisSpacing: kDefaultPadding,
-                mainAxisSpacing: kDefaultPadding,
-                childAspectRatio: 1.5,
-              ),
-              itemCount: courses.length,
-              itemBuilder: (context, index) {
-                final course = courses[index];
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const CourseDetailScreen(),
-                      ),
-                    );
-                  },
-                  child: CourseItem(
-                    // 💡 ပြဿနာ (၂) ဖြေရှင်းရန်: Localization Logic ဖြင့် တန်ဖိုးများကို ဆွဲထုတ်ခြင်း
-                    title: course['title'][_selectedLanguage]!,
-                    duration: course['duration'][_selectedLanguage]!,
-                    price: course['price'][_selectedLanguage]!,
-                    buttonText:
-                        course['button'][_selectedLanguage]!, // buttonText လည်း Localization လုပ်ပါ
-                  ),
-                );
-              },
-            );
-          },
-        ),
-      ],
+        onTap: () {
+          _navigateToQuizDetail(title, quizId);
+        },
+      ),
     );
   }
 
-  // --- Banner/Header Widget ---
-  Widget _buildBanner() {
-    final String bannerText = _selectedLanguage == 'MM'
-        ? '🚗 သင်မောင်းနှင်ရမည့် ခရီးလမ်းအတွက် အသင့်ပြင်ပါ!!'
-        : '🚗 Get Ready for Your Driving Journey!!';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          bannerText,
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
+  Widget _buildBlogItem(String title, {required int blogId}) {
+    // ... (UI Code သည် ယခင်အတိုင်း မှန်ကန်နေပါသည်) ...
+    return Card(
+      color: Colors.white.withOpacity(0.05),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: ListTile(
+        title: Text(title, style: const TextStyle(color: Colors.white)),
+        trailing: const Text(
+          'ကြည့်ရန်',
+          style: TextStyle(color: Colors.cyanAccent),
         ),
-      ],
+        onTap: () {
+          _navigateToBlogDetail(title, blogId);
+        },
+      ),
     );
-  }
-
-  // --- Quiz & Blog Sections (Responsive) ---
-  Widget _buildQuizAndBlogSection(BuildContext context) {
-    // MM/EN ပေါ်မူတည်ပြီး ခေါင်းစဉ်များနှင့် စာသားများ ပြောင်းလဲရန် Logic
-    final String quizTitle = _selectedLanguage == 'MM'
-        ? 'Quiz စစ်မေးခွန်းများ (Quizzes)'
-        : 'Quiz Questions (Quizzes)';
-    final String blogTitle = _selectedLanguage == 'MM'
-        ? 'Blog များ (Blogs)'
-        : 'Blog Posts (Blogs)';
-
-    // Quiz Card အတွင်းက Items (Text များကို _selectedLanguage ဖြင့် စစ်ဆေးပါ)
-    final List<Widget> quizItems = [
-      SectionItem(
-        text: _selectedLanguage == 'MM'
-            ? 'ယာဉ်မောင်းလက်မှတ် စစ်မေးခွန်းများ'
-            : 'Driving License Exam Questions',
-      ),
-      SectionItem(
-        text: _selectedLanguage == 'MM'
-            ? 'အရေးပေါ် အခြေအနေ စစ်မေးခွန်းများ'
-            : 'Emergency Scenario Questions',
-      ),
-      SectionItem(
-        text: _selectedLanguage == 'MM'
-            ? 'ယာဉ်စည်းကမ်းဆိုင်ရာ အမှတ်တရ Quiz'
-            : 'Traffic Rules Quiz',
-      ),
-    ];
-
-    // Blog Card အတွင်းက Items
-    final List<Widget> blogItems = [
-      SectionItem(
-        text: _selectedLanguage == 'MM'
-            ? '၂၀၂၅ ယာဉ်မောင်းလိုင်စင် စည်းမျဉ်းများ'
-            : '2025 Driving License Regulations',
-        date: _selectedLanguage == 'MM' ? 'ဇွန်လ ၂၀ ရက်' : 'Jun 20',
-      ),
-      SectionItem(
-        text: _selectedLanguage == 'MM'
-            ? 'ကားစ်ခေါင်ခြင်း အခြေခံနည်းလမ်း ၅ ချက်'
-            : '5 Basic Car Maintenance Tips',
-        date: _selectedLanguage == 'MM' ? 'ဇွန်လ ၅ ရက်' : 'Jun 5',
-      ),
-      SectionItem(
-        text: _selectedLanguage == 'MM' ? 'အားလုံးကြည့်ရန်' : 'View All',
-      ),
-    ];
-
-    // ... (Layout Logic ကို ဒီအတိုင်းထားပါ)
-    return MediaQuery.of(context).size.width < 900
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SectionCard(title: quizTitle, items: quizItems),
-              const SizedBox(height: kDefaultPadding),
-              SectionCard(title: blogTitle, items: blogItems),
-            ],
-          )
-        : Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: SectionCard(title: quizTitle, items: quizItems),
-              ),
-              const SizedBox(width: kDefaultPadding),
-              Expanded(
-                child: SectionCard(title: blogTitle, items: blogItems),
-              ),
-            ],
-          );
   }
 }

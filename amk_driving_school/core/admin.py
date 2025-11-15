@@ -42,7 +42,7 @@ class BookingInline(admin.TabularInline):
 # ---------- Admins ----------
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "code", "is_public", "batches_count")
+    list_display = ("id", "title", "code", 'description', 'price',  "is_public", "batches_count", 'duration_day', 'total_duration_hours', 'price')
     list_filter = ("is_public",)
     search_fields = ("title", "code")
     inlines = [BatchInline]

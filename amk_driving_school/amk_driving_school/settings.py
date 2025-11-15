@@ -9,7 +9,9 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
-
+import firebase_admin
+from firebase_admin import credentials
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -40,11 +42,14 @@ INSTALLED_APPS = [
 
     'core.apps.CoreConfig',
     'accounts.apps.AccountsConfig',
+    'dashboard.apps.DashboardConfig',
     'rest_framework',
     'corsheaders',
     'django_filters',
     'drf_yasg',
     'drf_spectacular',
+
+    'rest_framework_simplejwt',
 ]
 
 MIDDLEWARE = [
@@ -141,6 +146,10 @@ REST_FRAMEWORK = {
   "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
   "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
 
+  'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated', 
+    ],
+
   'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
@@ -180,3 +189,34 @@ CORS_ALLOW_ALL_ORIGINS = True
 #     # အနာဂတ်မှာ တခြား port တွေနဲ့ run ရင်လည်း ဒီ list ထဲမှာ ထပ်ထည့်ပေးနိုင်ပါတယ်
 #     # ဥပမာ: 'http://localhost:3000'
 # ]
+
+
+
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    # JWT Token သက်တမ်းများ သတ်မှတ်ခြင်း
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    
+    # Header Format
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    
+    # Login လုပ်တဲ့အခါ Username ဖြင့် လုပ်နိုင်ရန်
+    'USER_ID_FIELD': 'id',
+    'USER_AUTHENTICATION_RULE': 'rest_framework_simplejwt.authentication.default_user_authentication_rule',
+}
+
+
+FIREBASE_CREDENTIALS_PATH = os.path.join(BASE_DIR, 'firebase-adminsdk.json')
+
+if os.path.exists(FIREBASE_CREDENTIALS_PATH):
+    cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
+    firebase_admin.initialize_app(cred)
+    print("Firebase Admin SDK initialized successfully.")
+else:
+    print("WARNING: Firebase Admin SDK NOT initialized. firebase-adminsdk.json not found.")

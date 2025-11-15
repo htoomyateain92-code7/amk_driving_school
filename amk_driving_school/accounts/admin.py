@@ -7,21 +7,31 @@ from .models import User, Profile
 
 
 class CustomUserAdmin(UserAdmin):
-    # autocomplete_fields အလုပ်လုပ်ဖို့ ဒီ search_fields က မဖြစ်မနေလိုအပ်ပါတယ်
-    search_fields = ('username', 'email', 'first_name', 'last_name')
-
-    # Admin list view မှာ 'role' ကိုပါ တစ်ခါတည်းပြချင်ရင်
-    list_display = ('username', 'email', 'first_name', 'last_name', 'is_staff', 'role')
-    list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups', 'role')
-
-    # User ကို edit လုပ်တဲ့ form မှာ 'role' field ကို ထည့်သွင်းရန်
-    # UserAdmin ရဲ့ မူလ fieldsets ကို copy ယူပြီး 'role' ကိုထပ်ထည့်ပါ
-    fieldsets = UserAdmin.fieldsets + (
-        ('Custom Fields', {'fields': ('role',)}),
-    ) # type: ignore
-    add_fieldsets = UserAdmin.add_fieldsets + (
-        ('Custom Fields', {'fields': ('role',)}),
+    # 💡 fieldsets ကို ပြင်ဆင်ပါ
+    fieldsets = (
+        (None, {'fields': ('username',)}),
+        # Permissions Fieldset ကို ပြင်ဆင်ပြီး is_staff အစား role ကို ထည့်ပါ
+        ('Personal info', {'fields': ('first_name', 'last_name', 'email')}),
+        ('Permissions', {
+            'fields': ('is_active', 'is_superuser', 'role', 'groups', 'user_permissions'),
+        }),
+        ('Important dates', {'fields': ('last_login', 'date_joined')}),
     )
+    
+    # # 💡 add_fieldsets ကို ပြင်ဆင်ပါ (အကောင့်အသစ် ဖန်တီးရာတွင် သုံးသည်)
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('username', 'email', 'role', 'password', 'password2'),
+        }),
+    )
+    
+    # 💡 list_display မှာလည်း is_staff အစား role ကို ထည့်သွင်းပါ
+    list_display = ('username', 'email', 'first_name', 'last_name', 'role', 'is_active')
+    
+    # 💡 is_staff ကို list_filter မှာလည်း ဖယ်ရှားပြီး is_active ကိုသာ ထားပါ
+    list_filter = ('is_active', 'is_superuser', 'role') # 'is_staff' ကို ဖယ်ရှားလိုက်ပါ
+    search_fields = ('username', 'email', 'first_name', 'last_name')
 
 
 # Profile model အတွက် Admin (Optional)

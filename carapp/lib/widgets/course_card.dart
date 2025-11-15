@@ -22,6 +22,8 @@ class CourseCard extends StatelessWidget {
       blurAmount: 8.0,
       borderRadius: 15.0,
       opacity: 0.15, // နည်းနည်းပိုဖျော့
+
+      padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
       child: Padding(
         padding: const EdgeInsets.all(kDefaultPadding),
         child: Column(

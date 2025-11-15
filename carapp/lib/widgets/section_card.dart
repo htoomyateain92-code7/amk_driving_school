@@ -8,7 +8,14 @@ class SectionCard extends StatelessWidget {
   final String title;
   final List<Widget> items;
 
-  const SectionCard({super.key, required this.title, required this.items});
+  final VoidCallback? onTap;
+
+  const SectionCard({
+    super.key,
+    required this.title,
+    required this.items,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -16,6 +23,8 @@ class SectionCard extends StatelessWidget {
       blurAmount: 5.0,
       opacity: 0.1,
       borderRadius: 15.0,
+
+      padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
       child: Padding(
         padding: const EdgeInsets.all(kDefaultPadding),
         child: Column(
@@ -46,7 +55,12 @@ class SectionItem extends StatelessWidget {
   final String text;
   final String? date;
 
-  const SectionItem({super.key, required this.text, this.date});
+  const SectionItem({
+    super.key,
+    required this.text,
+    this.date,
+    required void Function() onTap,
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -1,13 +1,16 @@
-// lib/screens/login_screen.dart
-
+import 'package:carapp/screens/instructor_dashboard_screen.dart';
+import 'package:carapp/screens/student_dashboard_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../constants/constants.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
-import 'owner_dashboard_screen.dart'; // ဝင်ရောက်ပြီးနောက် သွားမည့် Dashboard (ဥပမာ)
+import 'owner_dashboard_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool isModal;
+
+  const LoginScreen({super.key, this.isModal = false});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -16,11 +19,10 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final ApiService _apiService = ApiService();
+
   bool _isLoading = false;
   String _errorMessage = '';
 
-  // 💡 နောက်မှ Register/Login ကို ခွဲခြားရန် (ပုံမှန်အားဖြင့် Tab သုံးသည်)
   bool _isLogin = true;
 
   @override
@@ -30,34 +32,72 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  // --- API Login Logic ---
+  // --- API Login Logic (Provider ဖြင့် ပြန်လည်ပြင်ဆင်) ---
   Future<void> _login() async {
+    // 💡 Provider.of<ApiService>(context, listen: false) ကို ခေါ်ယူရန်
+    final apiService = Provider.of<ApiService>(context, listen: false);
+
+    if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
+      setState(() {
+        _errorMessage = 'အမည်နှင့် လျှို့ဝှက်နံပါတ် ဖြည့်ရန် လိုအပ်ပါသည်။';
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = '';
     });
 
     try {
-      // 💡 ApiService မှ Login Function ကို ခေါ်ယူသည်
-      String token = await _apiService.login(
+      // 💡 Login API Call ကို ခေါ်ယူသည်
+      Map<String, dynamic> result = await apiService.login(
         _usernameController.text,
         _passwordController.text,
       );
 
-      // Login အောင်မြင်ပါက (Token ရရှိပါက)
-      // ဥပမာ- Token ကို SharedPreferences တွင် သိမ်းဆည်းပြီး Dashboard သို့ သွားပါ
-      if (mounted) {
-        // [TODO]: Token သိမ်းဆည်းရန် Logic
+      // Login အောင်မြင်ပါက (Token ရရှိပြီး role ပြန်လာပါက)
+      if (result['success'] == true && mounted) {
+        // 💡 FIX: Role ပေါ်မူတည်၍ သက်ဆိုင်ရာ Dashboard သို့ တွန်းပို့ခြင်း
+        String role = result['role']?.toLowerCase() ?? 'student';
 
-        // 💡 ယာယီအားဖြင့် Owner Dashboard သို့ သွားပါ
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => const OwnerDashboardScreen()),
+        Widget destination;
+
+        switch (role) {
+          case 'owner':
+            destination = const OwnerDashboardScreen();
+            break;
+          case 'instructor':
+            destination = const InstructorDashboardScreen();
+            break;
+          case 'student':
+          default:
+            destination = const StudentDashboardScreen();
+            break;
+        }
+
+        // 💡 Navigation: Dashboard သို့ Stack ရှင်းပြီး တွန်းပို့ခြင်း
+        // isModal ဖြစ်စေ၊ မဖြစ်စေ၊ Login အောင်မြင်လျှင် Dashboard သို့ ရောက်ရမည်။
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => destination),
+          (Route<dynamic> route) => false, // Stack ရှင်းလင်းခြင်း
         );
+
+        return; // Login အောင်မြင်ပြီး Navigation လုပ်ပြီးနောက် ပြန်ထွက်မည်
+      }
+      // API မအောင်မြင်ရင်
+      else if (mounted) {
+        setState(() {
+          _errorMessage =
+              result['message'] ??
+              'Login မအောင်မြင်ပါ: Server error သို့မဟုတ် ခွင့်ပြုချက်မရှိပါ။';
+        });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Login Failed: Invalid credentials or API error.';
+          _errorMessage =
+              'Login ပြဿနာ: API ချိတ်ဆက်မှု အမှား။ (Detail: ${e.toString()})';
         });
       }
     } finally {
@@ -72,12 +112,15 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Login / Register'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
+      appBar: widget.isModal
+          ? AppBar(
+              title: const Text('အကောင့်ဝင်ရန်'),
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              iconTheme: const IconThemeData(color: Colors.white),
+            )
+          : null,
+
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -91,8 +134,10 @@ class _LoginScreenState extends State<LoginScreen> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(kDefaultPadding * 2),
             child: GlassCard(
-              blurAmount: 15.0, // Form Card ကို ပိုမိုမှုန်ဝါးစေပါ
+              blurAmount: 15.0,
               borderRadius: 20.0,
+
+              padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
               child: Padding(
                 padding: const EdgeInsets.all(kDefaultPadding * 2),
                 child: Column(
@@ -101,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text(
                       _isLogin ? 'အကောင့်ဝင်ရန်' : 'အကောင့်အသစ်ဖွင့်ရန်',
                       style: const TextStyle(
-                        fontSize: 28,
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
@@ -109,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 30),
                     _buildTextField(
                       _usernameController,
-                      'အမည်/အီးမေးလ်',
+                      'အမည်/ဖုန်းနံပါတ်',
                       Icons.person,
                     ),
                     const SizedBox(height: 20),
@@ -132,7 +177,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     _buildGradientButton(
                       _isLogin ? 'ဝင်ရောက်ပါ' : 'မှတ်ပုံတင်ပါ',
-                      _login,
+                      // 💡 onPressed တွင် _login function ကို ထည့်သွင်းထားသည်
+                      _isLogin
+                          ? _login
+                          : () {
+                              // Register Functionality Needed
+                              print('Register Functionality Needed');
+                            },
                     ),
 
                     const SizedBox(height: 20),
@@ -143,6 +194,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         setState(() {
                           _isLogin = !_isLogin;
                           _errorMessage = '';
+                          _usernameController.clear();
+                          _passwordController.clear();
                         });
                       },
                       child: Text(
@@ -172,6 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
     IconData icon, {
     bool isPassword = false,
   }) {
+    // ... (Text Field implementation)
     return TextField(
       controller: controller,
       obscureText: isPassword,
@@ -200,6 +254,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   // --- Gradient Button ---
   Widget _buildGradientButton(String text, VoidCallback onPressed) {
+    // ... (Button implementation)
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(

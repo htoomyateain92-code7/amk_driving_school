@@ -1,10 +1,13 @@
 // lib/screens/instructor_dashboard_screen.dart
 
+import 'package:carapp/screens/course_selection_screen.dart';
+import 'package:carapp/services/api_service.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../constants/constants.dart';
 import '../widgets/custom_glass_app_bar.dart';
 import '../widgets/glass_card.dart';
-import '../models/dashboard_model.dart';
+import '../models/dashboard_model.dart'; // InstructorDashboardData ပါဝင်သည်
 
 class InstructorDashboardScreen extends StatefulWidget {
   const InstructorDashboardScreen({super.key});
@@ -17,19 +20,35 @@ class InstructorDashboardScreen extends StatefulWidget {
 class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
   String _selectedLanguage = 'MM';
 
-  // Hardcoded Data (API ကနေ လာမည်ဟု ယူဆ)
-  final InstructorDashboardData _dashboardData = InstructorDashboardData(
-    schedule:
-        'မနက် ၈:၀၀ မှ ၁၀:၀၀ - အခြေခံအုပ်စု (A)\nနေ့လယ် ၂:၀၀ မှ ၄:၀၀ - အဆင့်မြင့် ကျောင်းသား (စောသူ)',
-    studentNote: 'ကျောင်းသား ၅ ဦး Quiz ဖြေဆိုရန် ကျန်ရှိနေသည်',
-    teachingTips: 5,
-  );
+  // 💡 [FIX 1] InstructorDashboardData အမျိုးအစားကို မှန်ကန်စွာ သုံးပါ
+  late Future<InstructorDashboardData> _dashboardDataFuture;
+  final ApiService _apiService = ApiService();
+
+  @override
+  void initState() {
+    super.initState();
+    // 💡 [FIX 2] initState တွင် Data Fetching ကို စတင်ပါ
+    _dashboardDataFuture = _apiService.fetchInstructorDashboardData();
+  }
+
+  void _handleLogout(BuildContext context) {
+    final apiService = Provider.of<ApiService>(context, listen: false);
+
+    // 💡 Logout ကို ခေါ်သည်
+    apiService.logout();
+
+    // Navigation: Stack ရှင်းပြီး Home (CourseSelectionScreen) သို့ ပြန်သွားသည်
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const CourseSelectionScreen()),
+      (Route<dynamic> route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     // Logout Button
     final Widget logoutButton = TextButton.icon(
-      onPressed: () {},
+      onPressed: () => _handleLogout(context),
       icon: const Icon(Icons.logout, color: Colors.white, size: 18),
       label: Text(
         _selectedLanguage == 'MM' ? 'ထွက်ရန်' : 'Logout',
@@ -66,6 +85,10 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
           _buildDashboardMenu(),
           const SizedBox(width: kDefaultPadding / 2),
         ],
+        leading: IconButton(
+          onPressed: () => Scaffold.of(context).openDrawer(),
+          icon: const Icon(Icons.menu, color: Colors.white),
+        ),
       ),
 
       body: Container(
@@ -77,19 +100,51 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
             end: Alignment.bottomRight,
           ),
         ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(kDefaultPadding),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              _buildGreetingHeader(),
-              const SizedBox(height: kDefaultPadding * 1.5),
-              _buildScheduleCard(),
-              const SizedBox(height: kDefaultPadding * 1.5),
-              _buildBottomSections(),
-              const SizedBox(height: kDefaultPadding * 4),
-            ],
-          ),
+
+        // 💡 [FIX 3] FutureBuilder ဖြင့် Data Fetching ကို ကိုင်တွယ်ခြင်း
+        child: FutureBuilder<InstructorDashboardData>(
+          future: _dashboardDataFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.cyanAccent),
+              );
+            } else if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  // API Error Message ကို ပြပါ
+                  'Error: ${snapshot.error}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 16),
+                ),
+              );
+            } else if (snapshot.hasData) {
+              // Data အောင်မြင်စွာ ရရှိသောအခါ
+              final InstructorDashboardData data = snapshot.data!;
+
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(kDefaultPadding),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _buildGreetingHeader(),
+                    const SizedBox(height: kDefaultPadding * 1.5),
+                    _buildScheduleCard(data), // 💡 Data ကို ထည့်သွင်းပါ
+                    const SizedBox(height: kDefaultPadding * 1.5),
+                    _buildBottomSections(data), // 💡 Data ကို ထည့်သွင်းပါ
+                    const SizedBox(height: kDefaultPadding * 4),
+                  ],
+                ),
+              );
+            } else {
+              return const Center(
+                child: Text(
+                  'No dashboard data available.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              );
+            }
+          },
         ),
       ),
     );
@@ -112,12 +167,15 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
   }
 
   // --- 1. Schedule Card ---
-  Widget _buildScheduleCard() {
+  // 💡 [FIX 4] Data ကို parameter ဖြင့် လက်ခံပါ
+  Widget _buildScheduleCard(InstructorDashboardData data) {
     final String title = _selectedLanguage == 'MM'
         ? 'ယနေ့အချိန်ဇယား'
         : "Today's Schedule";
 
     return GlassCard(
+      borderWidth: 50,
+      padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
       child: Padding(
         padding: const EdgeInsets.all(kDefaultPadding),
         child: Column(
@@ -129,7 +187,7 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              _dashboardData.schedule,
+              data.schedule, // 💡 API Data ကို သုံးပါ
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
@@ -144,7 +202,7 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
                 const SizedBox(width: 8),
                 Text(
                   _selectedLanguage == 'MM'
-                      ? 'ယနေ့ - ဖေဖော်ဝါရီ ၄ ရက်'
+                      ? 'ယနေ့ - ဖေဖော်ဝါရီ ၄ ရက်' // 💡 API ကနေ လာမယ့်ရက်စွဲကို ပြင်ပေးပါ
                       : 'Today - Feb 4',
                   style: const TextStyle(color: Colors.white70),
                 ),
@@ -157,12 +215,14 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
   }
 
   // --- 2. Bottom Sections (Student Notes & Tips) ---
-  Widget _buildBottomSections() {
+  // 💡 [FIX 5] Data ကို parameter ဖြင့် လက်ခံပြီး၊ Sub-widgets များသို့ ပို့ပါ
+  Widget _buildBottomSections(InstructorDashboardData data) {
     final double screenWidth = MediaQuery.of(context).size.width;
 
-    final Widget noteCard = _buildStudentNoteCard();
-    final Widget tipsCard = _buildTipsCard();
+    final Widget noteCard = _buildStudentNoteCard(data);
+    final Widget tipsCard = _buildTipsCard(data);
 
+    // ... (Layout Logic is correct) ...
     if (screenWidth < 900) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -185,12 +245,15 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
   }
 
   // --- Student Note Card ---
-  Widget _buildStudentNoteCard() {
+  // 💡 [FIX 6] Data ကို parameter ဖြင့် လက်ခံပါ
+  Widget _buildStudentNoteCard(InstructorDashboardData data) {
     final String title = _selectedLanguage == 'MM'
         ? 'ကျောင်းသား အမှတ်ပေးရန်'
         : 'Student Scores/Notes';
 
     return GlassCard(
+      borderWidth: 50,
+      padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
       child: Padding(
         padding: const EdgeInsets.all(kDefaultPadding),
         child: Column(
@@ -202,7 +265,7 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              _dashboardData.studentNote,
+              data.studentNote, // 💡 API Data ကို သုံးပါ
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
@@ -225,12 +288,15 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
   }
 
   // --- Tips Card ---
-  Widget _buildTipsCard() {
+  // 💡 [FIX 7] Data ကို parameter ဖြင့် လက်ခံပါ
+  Widget _buildTipsCard(InstructorDashboardData data) {
     final String title = _selectedLanguage == 'MM'
         ? 'တိုင်ပင်ကြံဉာဏ်များ'
         : 'Teaching Tips';
 
     return GlassCard(
+      borderWidth: 0.5,
+      padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
       child: Padding(
         padding: const EdgeInsets.all(kDefaultPadding),
         child: Column(
@@ -243,8 +309,8 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
             const SizedBox(height: 12),
             Text(
               _selectedLanguage == 'MM'
-                  ? 'ဖြေရှင်းရမည့် တိုင်ပင်ကြံဉာဏ် ${_dashboardData.teachingTips} ခု ရှိသည်။'
-                  : 'There are ${_dashboardData.teachingTips} tips to review.',
+                  ? 'ဖြေရှင်းရမည့် တိုင်ပင်ကြံဉာဏ် ${data.teachingTips} ခု ရှိသည်။' // 💡 API Data ကို သုံးပါ
+                  : 'There are ${data.teachingTips} tips to review.',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 18,
@@ -268,6 +334,7 @@ class _InstructorDashboardScreenState extends State<InstructorDashboardScreen> {
 
   // --- Dashboard Menu Bar ---
   Widget _buildDashboardMenu() {
+    // ... (Code is correct) ...
     final List<Map<String, dynamic>> menuItems = [
       {
         'label': 'နည်းပြ Dashboard',

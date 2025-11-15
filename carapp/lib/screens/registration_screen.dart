@@ -49,6 +49,8 @@ class RegistrationScreen extends StatelessWidget {
       blurAmount: 10.0,
       opacity: 0.2,
       borderRadius: 15.0,
+
+      padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
       child: Padding(
         padding: const EdgeInsets.all(kDefaultPadding * 2),
         child: Column(

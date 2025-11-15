@@ -18,6 +18,9 @@ class Course(models.Model):
         default=60,
         help_text="တစ်ကြိမ်သင်တန်းအတွက် အများဆုံး ကြာချိန် (မိနစ်ဖြင့်)"
     )
+    duration_day = models.IntegerField(default=3, verbose_name=("သင်တန်းကြာမြင့်ချိန် (ရက်)"),
+        help_text=("သင်တန်းတစ်ခုလုံးကြာမြင့်မည့် ရက်အရေအတွက် (ဥပမာ: 3 ရက်)"))
+    price = models.CharField(max_length=100)
     is_public = models.BooleanField(default=True)
 
     @property
@@ -123,6 +126,9 @@ class OrderItem(models.Model):  # for ORDER
     question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='order_items')
     text = models.CharField(max_length=255)
     order_index = models.PositiveIntegerField()  # 0..n
+
+    def __str__(self):
+        return self.text
 
 class Submission(models.Model):
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE)

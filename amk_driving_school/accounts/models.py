@@ -14,6 +14,14 @@ class User(AbstractUser):
     # Role ကို ဒီ User model မှာပဲ တစ်နေရာတည်းမှာ သိမ်းပါ
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="student")
 
+    @property
+    def is_owner(self):
+        return self.role == "owner"
+
+    @property
+    def is_admin(self):
+        return self.role == "admin"
+
     # is_instructor, is_student တို့လို property တွေထည့်ရေးထားရင် ပိုအဆင်ပြေပါတယ်
     @property
     def is_instructor(self):
@@ -22,6 +30,11 @@ class User(AbstractUser):
     @property
     def is_student(self):
         return self.role == "student"
+
+    @property
+    def is_staff(self):
+        # Django Admin Panel နှင့် IsAdminUser Permission များကို ထိန်းချုပ်ရန်
+        return self.role in ["owner", "admin", "instructor"]
 
 
 class Profile(models.Model):

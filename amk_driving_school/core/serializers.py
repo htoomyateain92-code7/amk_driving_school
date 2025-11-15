@@ -1,6 +1,6 @@
 
 import random
-from rest_framework import serializers
+from rest_framework import serializers # type: ignore
 
 from accounts.serializers import SimpleUserSerializer
 from .models import Article, Booking, Course, Batch, Notification, Option, Question, Quiz, Session, DeviceToken, Submission
@@ -18,9 +18,9 @@ import pytz
 
 class TimezoneAwareSerializer(serializers.ModelSerializer):
     start_dt = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S%z', default_timezone= # type: ignore
-                                         pytz.timezone('Asia/Yangon'))
+                pytz.timezone('Asia/Yangon'))
     end_dt = serializers.DateTimeField(format='%Y-%m-%dT%H:%M:%S%z', default_timezone= # type: ignore
-                                       pytz.timezone('Asia/Yangon'))
+                pytz.timezone('Asia/Yangon'))
 
 
 
@@ -46,7 +46,7 @@ class CourseListSerializer(serializers.ModelSerializer):
     """Course တွေရဲ့ list ကိုပြ하기အတွက် ရိုးရှင်းသော serializer"""
     class Meta:
         model = Course
-        fields = ['id', 'title', 'code', 'description']
+        fields =  "__all__"
 
 # class CourseDetailSerializer(serializers.ModelSerializer):
 #     """Course တစ်ခုရဲ့ အသေးစိတ်ကိုပြ하기အတွက် (nested batches ပါဝင်)"""
@@ -70,7 +70,7 @@ class CourseDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'code', 'description', 'is_public', 
             'total_duration_hours', 'required_sessions', 'max_session_duration_minutes', # ထပ်ထည့်လိုက်သော Fields များ
-            'batches'
+            'batches', 'price'
         ]
 
 
@@ -187,16 +187,45 @@ class QuestionPublicSer(serializers.ModelSerializer):
         fields = ["id", "text", "qtype", "options", "order_items"]
 
     def get_options(self, obj):
-        if obj.qtype != "MCQ": return None
+        if obj.qtype != "MCQ": return None # None ကို ပြန်ပို့သည်
         items = list(obj.options.all())
         random.shuffle(items)
         return OptionPublicSer(items, many=True).data
 
     def get_order_items(self, obj):
-        if obj.qtype != "ORDER": return None
-        items = list(obj.order_items.all())
-        random.shuffle(items)
-        return [{"id": it.id, "text": it.text} for it in items]
+        if obj.qtype != "ORDER": return None # None ကို ပြန်ပို့သည်
+        # 💡 [CHECK]: related_name မှန်ကန်ကြောင်း သေချာပါစေ။
+        try:
+            items = list(obj.order_items.all())
+
+            if not items:
+                return []
+
+            random.shuffle(items)
+        # 💡 OptionPublicSer သည် Order Item များ၏ id, text ကိုသာ လိုအပ်သည်ဟု ယူဆပါသည်။
+            return OptionPublicSer(items, many=True).data
+        except Exception as e:
+            print(f"Error in get_order_items: {e}")
+            return [] # Error တက်ရင်တောင် [] ပြန်ပေးပါ။
+
+    def to_representation(self, instance):
+        # 1. Base representation ကို ခေါ်လိုက်တာနဲ့ get_options နှင့် get_order_items တို့ကို တွက်ပြီး data ထဲ ရောက်သွားပြီ။
+        data = super().to_representation(instance)
+
+        # 2. မေးခွန်းအမျိုးအစားအလိုက် မလိုအပ်သော key များကို တိကျစွာ ဖယ်ရှားခြင်း
+        if instance.qtype == 'MCQ':
+            # MCQ အတွက် options လိုအပ်ပြီး order_items မလိုအပ်ပါ။
+            data.pop('order_items', None)
+
+        elif instance.qtype == 'ORDER':
+            # ORDER အတွက် order_items လိုအပ်ပြီး options မလိုအပ်ပါ။
+            data.pop('options', None)
+
+        else:
+            # အခြား type များအတွက် နှစ်ခုလုံး ဖယ်ရှား
+            data.pop('options', None)
+            data.pop('order_items', None)
+        return data
 
 class QuizDetailSer(serializers.ModelSerializer):
     questions = QuestionPublicSer(many=True, read_only=True)

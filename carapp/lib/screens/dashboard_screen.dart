@@ -7,7 +7,7 @@ import '../widgets/course_card.dart';
 import '../widgets/info_card.dart';
 
 class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({super.key});
+  const DashboardScreen({super.key, required String role});
 
   @override
   Widget build(BuildContext context) {
@@ -255,6 +255,8 @@ class DashboardScreen extends StatelessWidget {
           blurAmount: 5.0,
           borderRadius: 15.0,
           opacity: 0.1,
+          borderWidth: 0.5,
+          padding: EdgeInsets.symmetric(horizontal: 15.0, vertical: 5.0),
           child: ListView(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
