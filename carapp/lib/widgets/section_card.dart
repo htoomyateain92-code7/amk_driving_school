@@ -30,7 +30,6 @@ class SectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            // ခေါင်းစဉ်
             Text(
               title,
               style: const TextStyle(
@@ -50,7 +49,6 @@ class SectionCard extends StatelessWidget {
   }
 }
 
-// Card အတွင်းက Item တွေအတွက် Helper Widget
 class SectionItem extends StatelessWidget {
   final String text;
   final String? date;

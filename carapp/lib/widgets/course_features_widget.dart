@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 
-// သင်တန်း၏ အဓိက အချက်အလက် (Features) များကို လှပသော list အဖြစ် ပြသပေးသည့် Widget
 class CourseFeaturesWidget extends StatelessWidget {
   final List<String> features;
 

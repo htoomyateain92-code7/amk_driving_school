@@ -230,7 +230,7 @@ class StudentDashboardView(APIView):
         
         # ပြီးစီးသော Session များ (ယခုအချိန်ထက် နောက်ကျနေသော sessions)
         completed_sessions = all_sessions_for_student.filter(
-            end_dt__lte=now, 
+            # end_dt__lte=now, 
             status="completed"
         ).count()
         
@@ -243,7 +243,7 @@ class StudentDashboardView(APIView):
         # 3. လာမည့် Sessions များ (Upcoming Sessions)
         upcoming_sessions = all_sessions_for_student.filter(
             start_dt__gt=now,
-            status="available" # ဒါမှမဟုတ် approved
+            status__in=["scheduled", "available"] # ဒါမှမဟုတ် approved
         ).select_related('batch').order_by('start_dt')[:3] # လာမည့် ၃ ခုသာ ပြပါ
         
         # 4. နောက်ဆုံး Quiz Score

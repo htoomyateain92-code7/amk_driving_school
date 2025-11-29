@@ -11,7 +11,7 @@ class Course {
   final String? description;
   final bool isPublished;
   final int studentCount;
-  final String? durationDays;
+  final int? durationDays;
   final int color;
 
   Course({
@@ -37,7 +37,7 @@ class Course {
       // 2. Duration: Non-nullable ဖြစ်သောကြောင့် null ဖြစ်ပါက 'N/A' default ပေးပါ
       totalDurationHours: json['totalDurationHours'] as String? ?? '',
 
-      durationDays: json['durationdays'] as String? ?? '',
+      durationDays: json['durationdays'] as int?,
 
       // 3. Price: double သို့ ပြောင်းလဲပြီး null ဖြစ်ပါက 0.0 ပေးပါ
       price: json['price'] as String?,

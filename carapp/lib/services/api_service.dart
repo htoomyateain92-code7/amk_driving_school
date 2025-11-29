@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform; // Platform ကို import လုပ်ရန်
 import 'package:carapp/models/blog_model.dart';
 import 'package:carapp/models/booking_model.dart';
 import 'package:carapp/models/course_detail_model.dart';
@@ -12,10 +13,10 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-// ✅ ပြင်ဆင်လိုက်သော URL: Android Emulator တွင် ချိတ်ဆက်ရန်အတွက် 10.0.2.2 ကို သုံးထားပါသည်။
-// Physical Device အတွက်ဆိုပါက သင့် Local IP (ဥပမာ: 192.168.1.10) ကို အသုံးပြုပါ။
-const String _baseUrl = 'http://localhost:8000/api/v1';
-const String _loginUrl = 'http://localhost:8000/api/v1/token/';
+import '../models/notification_model.dart';
+
+// 💡 [ဖယ်ရှားလိုက်သည်]: const String _baseUrl = ...;
+// 💡 [ဖယ်ရှားလိုက်သည်]: const String _loginUrl = ...;
 
 class ApiService with ChangeNotifier {
   // --- State Properties ---
@@ -23,15 +24,64 @@ class ApiService with ChangeNotifier {
   String? _userName;
   String _userRole = 'guest';
 
+  // --- Dynamic URL Getters (Multi-Device Support အတွက်) ---
+
+  // ✅ FIX 1: Platform ပေါ်မူတည်ပြီး Base IP/Port ကို Dynamic သတ်မှတ်ခြင်း
+  String get _baseIpPort {
+    if (kIsWeb) {
+      // Web (Chrome) အတွက် localhost
+      return 'http://127.0.0.1:8000';
+    } else if (Platform.isAndroid) {
+      // Android Emulator အတွက် 10.0.2.2 (Host PC ကို ရည်ညွှန်းရန်)
+      return 'http://10.0.2.2:8000';
+    } else {
+      // iOS Simulator/Desktop/Physical Device အတွက် (လိုအပ်ပါက 127.0.0.1 အစား
+      // သင်၏ Local IP ဥပမာ: 192.168.1.x ကို ပြောင်းနိုင်ပါသည်။)
+      return 'http://127.0.0.1:8000';
+    }
+  }
+
+  // ✅ FIX 2: API Base URL ကို Dynamic သုံးစွဲခြင်း
+  String get _baseUrl => '$_baseIpPort/api/v1';
+
+  // ✅ FIX 3: Login URL ကို Dynamic သုံးစွဲခြင်း
+  String get _loginUrl => '$_baseIpPort/api/v1/token/';
+  // ----------------------------------------------------
+
   // --- Getters ---
   bool get isLoggedIn => _accessToken != null;
   String get userRole => _userRole;
   String? get userName => _userName;
   String? _refreshToken;
+  static const String _accessTokenKey = 'access_token';
 
   // --- Constructor & Initial Load ---
   ApiService() {
+    // NOTE: _baseIpPort getter ကို ဒီနေရာမှာ ခေါ်စရာ မလိုပါဘူး။
     _loadInitialState();
+  }
+
+  Future<void> saveAccessToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_accessTokenKey, token);
+    print("Token saved successfully.");
+  }
+
+  Future<String?> getAccessToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    // SharedPreferences မှ 'access_token' key နဲ့ သိမ်းထားတဲ့ Token ကို ပြန်ဆွဲထုတ်ခြင်း
+    String? token = prefs.getString(_accessTokenKey);
+
+    if (token == null) {
+      print("WARNING: Access Token not found in local storage.");
+    }
+    return token;
+  }
+
+  Future<void> removeAccessToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_accessTokenKey);
+    print("Token removed successfully.");
   }
 
   Future<void> _loadInitialState() async {
@@ -50,6 +100,7 @@ class ApiService with ChangeNotifier {
 
   Future<void> _initializeUserDetails() async {
     try {
+      // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
       final response = await http.get(
         Uri.parse('$_baseUrl/accounts/me/'),
         headers: await _getHeaders(),
@@ -103,6 +154,7 @@ class ApiService with ChangeNotifier {
   // --- Login Logic ---
   Future<Map<String, dynamic>> login(String username, String password) async {
     try {
+      // 💡 Dynamic _loginUrl ကို သုံးစွဲခြင်း
       final response = await http.post(
         Uri.parse(_loginUrl),
         headers: await _getHeaders(requireAuth: false),
@@ -124,6 +176,8 @@ class ApiService with ChangeNotifier {
             await prefs.setString('refresh_token', data['refresh']);
             _refreshToken = data['refresh'];
           }
+
+          await saveAccessToken(token);
 
           await _setAccessToken(token);
           await _initializeUserDetails();
@@ -178,6 +232,7 @@ class ApiService with ChangeNotifier {
   }
 
   Future<void> register(String username, String password) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.post(
       Uri.parse('$_baseUrl/accounts/register/'),
       headers: await _getHeaders(requireAuth: false),
@@ -202,6 +257,7 @@ class ApiService with ChangeNotifier {
       return false;
     }
 
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.post(
       Uri.parse('$_baseUrl/token/refresh/'),
       headers: {'Content-Type': 'application/json'},
@@ -240,6 +296,7 @@ class ApiService with ChangeNotifier {
     }
 
     try {
+      // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
       final response = await http.get(
         Uri.parse('$_baseUrl/owner-dashboard/'),
         // 2. _getHeaders() ကို ခေါ်လိုက်တာနဲ့ Header တွေကို log လုပ်ပါလိမ့်မယ်။
@@ -273,6 +330,7 @@ class ApiService with ChangeNotifier {
   }
 
   Future<T> _executeDashboardCall<T>(String endpoint) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/$endpoint'),
       headers: await _getHeaders(requireAuth: true),
@@ -296,6 +354,7 @@ class ApiService with ChangeNotifier {
 
   Future<InstructorDashboardData> fetchInstructorDashboardData() async {
     try {
+      // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
       final response = await http.get(
         Uri.parse('$_baseUrl/instructor-dashboard/'),
         headers: await _getHeaders(requireAuth: true),
@@ -321,6 +380,7 @@ class ApiService with ChangeNotifier {
 
   Future<StudentDashboardData> fetchStudentDashboardData() async {
     try {
+      // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
       final response = await http.get(
         Uri.parse('$_baseUrl/student-dashboard/'),
         headers: await _getHeaders(requireAuth: true),
@@ -350,6 +410,7 @@ class ApiService with ChangeNotifier {
 
   // 1.1. [READ/LIST]: Courses စာရင်း (Admin Dashboard အတွက်)
   Future<List<Course>> fetchCourses({required bool isPublic}) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/courses/'),
       headers: await _getHeaders(requireAuth: !isPublic),
@@ -368,6 +429,7 @@ class ApiService with ChangeNotifier {
 
   // 1.2. [READ/LIST]: Public Course List (CourseListItem Model ကို သုံးသည်)
   Future<List<CourseListItem>> fetchPublicCourseList() async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/courses/public_list/'),
       headers: await _getHeaders(requireAuth: false),
@@ -382,26 +444,40 @@ class ApiService with ChangeNotifier {
   }
 
   // 1.3. [READ/DETAIL]: Course အသေးစိတ် (Booking Screen အတွက်)
-  Future<CourseDetail> fetchCourseDetail(int courseId) async {
+  Future<CourseDetail> fetchCourseDetail(int id) async {
+    // ID 0/Negative ကို API မခေါ်ခင် တားမြစ်ခြင်း (Create Mode အတွက်)
+    if (id <= 0) {
+      throw Exception(
+        'Cannot fetch course details with ID $id. This ID is reserved for creation mode (ID=0).',
+      );
+    }
+
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
-      Uri.parse('$_baseUrl/courses/$courseId/'),
+      // 💡 [FIXED]: URL တွင် id ကို တိုက်ရိုက်အသုံးပြုသည်။
+      Uri.parse('$_baseUrl/courses/$id/'),
       headers: await _getHeaders(requireAuth: false),
     );
 
     if (response.statusCode == 200) {
+      // JSON Decoding
       final Map<String, dynamic> data = json.decode(
         utf8.decode(response.bodyBytes),
       );
+
+      // 💡 [FIXED]: CourseDetail.fromJson ကို သုံးသည်။
       return CourseDetail.fromJson(data);
     } else {
+      // 404/500 စသည်တို့ ရရှိပါက Error Message ရှင်းလင်းစွာ ပေးခြင်း
       throw Exception(
-        'Failed to load course details for ID $courseId. Status: ${response.statusCode}',
+        'Failed to load course details for ID $id. Status: ${response.statusCode}',
       );
     }
   }
 
   // 1.4. [CREATE]: Course အသစ် ဖန်တီးခြင်း
   Future<Course> createCourse(Course course) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.post(
       Uri.parse('$_baseUrl/courses/'),
       headers: await _getHeaders(requireAuth: true),
@@ -419,6 +495,7 @@ class ApiService with ChangeNotifier {
 
   // 1.5. [UPDATE]: Course ပြင်ဆင်ခြင်း
   Future<Course> updateCourse(int id, Course course) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.put(
       Uri.parse('$_baseUrl/courses/$id/'),
       headers: await _getHeaders(requireAuth: true),
@@ -436,6 +513,7 @@ class ApiService with ChangeNotifier {
 
   // 1.6. [DELETE]: Course ဖျက်ခြင်း
   Future<void> deleteCourse(int id) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.delete(
       Uri.parse('$_baseUrl/courses/$id/'),
       headers: await _getHeaders(requireAuth: true),
@@ -454,6 +532,7 @@ class ApiService with ChangeNotifier {
 
   // 2.1. [READ/LIST]: Sessions အားလုံး (Admin/Instructor အတွက်)
   Future<List<Session>> fetchSessions() async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/sessions/'),
       headers: await _getHeaders(requireAuth: true),
@@ -471,6 +550,7 @@ class ApiService with ChangeNotifier {
 
   // 2.2. [READ/LIST]: Batch ID ဖြင့် Session စာရင်းကို ယူသည် (Booking/Public အတွက်)
   Future<List<Session>> fetchSessionsByBatch(int batchId) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/sessions/?batch_id=$batchId'),
       headers: await _getHeaders(requireAuth: false),
@@ -488,6 +568,7 @@ class ApiService with ChangeNotifier {
 
   // 2.3. [CREATE]: Session အသစ် ဖန်တီးခြင်း
   Future<Session> createSession(Session session) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.post(
       Uri.parse('$_baseUrl/sessions/'),
       headers: await _getHeaders(requireAuth: true),
@@ -506,6 +587,7 @@ class ApiService with ChangeNotifier {
 
   // 2.4. [UPDATE]: Session ပြင်ဆင်ခြင်း
   Future<Session> updateSession(int id, Session session) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.put(
       Uri.parse('$_baseUrl/sessions/$id/'),
       headers: await _getHeaders(requireAuth: true),
@@ -523,6 +605,7 @@ class ApiService with ChangeNotifier {
 
   // 2.5. [DELETE]: Session ဖျက်ခြင်း
   Future<void> deleteSession(int id) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.delete(
       Uri.parse('$_baseUrl/sessions/$id/'),
       headers: await _getHeaders(requireAuth: true),
@@ -538,6 +621,7 @@ class ApiService with ChangeNotifier {
   // 💡 NEW: Session Data များကို ခေါ်ယူခြင်း (Batch ID ဖြင့် Filter လုပ်သည်)
   Future<List<CourseSession>> fetchSessionsForBatch(int batchId) async {
     // Django REST API Endpoint: /api/v1/sessions/?batch=<batchId>
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final url = Uri.parse('$_baseUrl/sessions/?batch=$batchId');
 
     final response = await http.get(
@@ -569,6 +653,7 @@ class ApiService with ChangeNotifier {
     required int batchId,
   }) async {
     // 1. URL
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final url = '$_baseUrl/bookings/';
 
     // 2. Data တွေ Empty မဖြစ်ဖို့ သေချာစစ်ဆေးပါ
@@ -606,8 +691,9 @@ class ApiService with ChangeNotifier {
 
   // 3.2. [READ/LIST]: User ရဲ့ Booking မှတ်တမ်းအားလုံးကို ယူသည်
   Future<List<Booking>> fetchMyBookings() async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
-      Uri.parse('$_baseUrl/bookings/my_bookings/'),
+      Uri.parse('$_baseUrl/bookings/'),
       headers: await _getHeaders(requireAuth: true),
     );
 
@@ -626,6 +712,7 @@ class ApiService with ChangeNotifier {
 
   // 3.3. [READ/DETAIL]: Booking တစ်ခုတည်းကို အသေးစိတ် ကြည့်ခြင်း
   Future<Booking> fetchBookingDetail(int bookingId) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/bookings/$bookingId/'),
       headers: await _getHeaders(requireAuth: true),
@@ -643,6 +730,7 @@ class ApiService with ChangeNotifier {
 
   // 3.4. [UPDATE]: Booking အခြေအနေ (Status) ပြောင်းလဲခြင်း (e.g., Cancel)
   Future<bool> updateBookingStatus(int bookingId, String newStatus) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.patch(
       Uri.parse('$_baseUrl/bookings/$bookingId/'),
       headers: await _getHeaders(requireAuth: true),
@@ -666,6 +754,7 @@ class ApiService with ChangeNotifier {
 
   // 3.5. [DELETE]: Booking ကို ဖျက်ခြင်း (Hard Delete)
   Future<void> deleteBooking(int bookingId) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.delete(
       Uri.parse('$_baseUrl/bookings/$bookingId/'),
       headers: await _getHeaders(requireAuth: true),
@@ -682,6 +771,7 @@ class ApiService with ChangeNotifier {
 
   // 4.1. [READ/LIST]: Quizzes စာရင်း
   Future<List<Quiz>> fetchQuizzes() async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/quizzes/'),
       headers: await _getHeaders(requireAuth: false),
@@ -699,7 +789,7 @@ class ApiService with ChangeNotifier {
 
   // 4.2. [READ/DETAIL]: Quiz Questions
   Future<QuizDetail> fetchQuizQuestions(int quizId) async {
-    // 💡 URL နောက်က slash (/) ကို ဖယ်လိုက်ပါ
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final String endpoint = '$_baseUrl/quizzes/$quizId/questions/';
     final response = await http.get(
       Uri.parse(endpoint),
@@ -723,6 +813,7 @@ class ApiService with ChangeNotifier {
 
   // 4.3. [CREATE]: Quiz အသစ် ဖန်တီးခြင်း
   Future<Quiz> createQuiz(Quiz quiz) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.post(
       Uri.parse('$_baseUrl/quizzes/'),
       headers: await _getHeaders(requireAuth: true),
@@ -738,6 +829,7 @@ class ApiService with ChangeNotifier {
 
   // 4.4. [UPDATE]: Quiz ပြင်ဆင်ခြင်း
   Future<Quiz> updateQuiz(int id, Quiz quiz) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.put(
       Uri.parse('$_baseUrl/quizzes/$id/'),
       headers: await _getHeaders(requireAuth: true),
@@ -753,6 +845,7 @@ class ApiService with ChangeNotifier {
 
   // 4.5. [DELETE]: Quiz ဖျက်ခြင်း
   Future<void> deleteQuiz(int id) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.delete(
       Uri.parse('$_baseUrl/quizzes/$id/'),
       headers: await _getHeaders(requireAuth: true),
@@ -769,6 +862,7 @@ class ApiService with ChangeNotifier {
 
   // 5.1. [READ/LIST]: Blogs စာရင်း
   Future<List<Blog>> fetchBlogs() async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/public/articles/'),
       headers: await _getHeaders(requireAuth: false),
@@ -784,6 +878,7 @@ class ApiService with ChangeNotifier {
 
   // 5.2. [READ/DETAIL]: Blog အသေးစိတ်
   Future<Map<String, dynamic>> fetchBlogDetail(int blogId) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.get(
       Uri.parse('$_baseUrl/public/articles/$blogId/'),
       headers: await _getHeaders(requireAuth: false),
@@ -803,6 +898,7 @@ class ApiService with ChangeNotifier {
 
   // 5.3. [CREATE]: Blog အသစ် ဖန်တီးခြင်း
   Future<Blog> createBlog(Blog blog) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.post(
       Uri.parse('$_baseUrl/public/articles/'),
       headers: await _getHeaders(requireAuth: true),
@@ -818,6 +914,7 @@ class ApiService with ChangeNotifier {
 
   // 5.4. [UPDATE]: Blog ပြင်ဆင်ခြင်း
   Future<Blog> updateBlog(int id, Blog blog) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.put(
       Uri.parse('$_baseUrl/public/articles/$id/'),
       headers: await _getHeaders(requireAuth: true),
@@ -833,6 +930,7 @@ class ApiService with ChangeNotifier {
 
   // 5.5. [DELETE]: Blog ဖျက်ခြင်း
   Future<void> deleteBlog(int id) async {
+    // 💡 Dynamic _baseUrl ကို သုံးစွဲခြင်း
     final response = await http.delete(
       Uri.parse('$_baseUrl/public/articles/$id/'),
       headers: await _getHeaders(requireAuth: true),
@@ -840,6 +938,59 @@ class ApiService with ChangeNotifier {
 
     if (response.statusCode != 204) {
       throw Exception('Failed to delete blog. Status: ${response.statusCode}');
+    }
+  }
+
+  Future<int> fetchUnreadNotificationCount() async {
+    // 💡 kBaseUrl တွင် သင်၏ API base URL ကို ထည့်သွင်းထားရပါမည်။
+    final response = await http.get(
+      Uri.parse('${_baseUrl}/notifications/unread_count/'),
+      headers: await _getHeaders(requireAuth: true),
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(utf8.decode(response.bodyBytes));
+
+      // 'unread_count' key မှ integer တန်ဖိုးကို ဆွဲထုတ်သည်။
+      return data['unread_count'] as int;
+    } else if (response.statusCode == 401) {
+      // Token သက်တမ်းကုန်ဆုံးလျှင်
+      throw Exception('Unauthorized: Session expired.');
+    } else {
+      throw Exception(
+        'Failed to load notification count: ${response.statusCode}',
+      );
+    }
+  }
+
+  Future<void> markAllNotificationsAsRead() async {
+    // 💡 URL သည် သင်၏ NotificationViewSet ၏ mark_all_as_read Action ကို ညွှန်ပြရမည်။
+    final response = await http.post(
+      Uri.parse('${_baseUrl}/notifications/mark-all-as-read/'),
+      headers: await _getHeaders(requireAuth: true),
+      body: json.encode({}),
+    );
+
+    if (response.statusCode != 200) {
+      // Error ဖြစ်လျှင် Exception ပစ်ပါ သို့မဟုတ် Log ရေးပါ
+      print('Failed to mark all notifications as read: ${response.statusCode}');
+      throw Exception('Failed to clear notifications.');
+    }
+    // 200 OK ဆိုရင် ဘာမှ ပြန်စရာ မလိုပါဘူး။
+  }
+
+  // Fetch Notifications List
+  Future<List<NotificationModel>> fetchNotifications() async {
+    final response = await http.get(
+      Uri.parse('${_baseUrl}/notifications/'), // List View Endpoint
+      headers: await _getHeaders(requireAuth: true),
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+      return data.map((json) => NotificationModel.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load notifications');
     }
   }
 }

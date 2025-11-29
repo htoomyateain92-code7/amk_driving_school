@@ -9,10 +9,12 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
-import firebase_admin
-from firebase_admin import credentials
+
 import os
+from firebase_admin import credentials # type: ignore
+import firebase_admin # type: ignore
 from pathlib import Path
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -27,12 +29,13 @@ SECRET_KEY = 'django-insecure-fh*zjvm1^w(#v@gpr(5hrjwr=uoh^c#69m_&&ze!^xon8en+_2
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    'jazzmin',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -68,7 +71,7 @@ ROOT_URLCONF = 'amk_driving_school.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -129,6 +132,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+
+STATICFILES_DIRS = [
+    BASE_DIR / "static",
+]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -212,11 +219,30 @@ SIMPLE_JWT = {
 }
 
 
-FIREBASE_CREDENTIALS_PATH = os.path.join(BASE_DIR, 'firebase-adminsdk.json')
+FIREBASE_CREDENTIALS_PATH = os.path.join(BASE_DIR, 'amk-driving-training-sch-285cb-firebase-adminsdk-fbsvc-65d9b9957b.json')
 
 if os.path.exists(FIREBASE_CREDENTIALS_PATH):
     cred = credentials.Certificate(FIREBASE_CREDENTIALS_PATH)
     firebase_admin.initialize_app(cred)
     print("Firebase Admin SDK initialized successfully.")
 else:
-    print("WARNING: Firebase Admin SDK NOT initialized. firebase-adminsdk.json not found.")
+    print("WARNING: Firebase Admin SDK NOT initialized. amk-driving-training-sch-285cb-firebase-adminsdk-fbsvc-65d9b9957b.json not found.")
+
+
+JAZZMIN_SETTINGS = {
+    "site_title": "AMK Admin",
+    "site_header": "AMK Driving Training School",
+    "site_brand": "AMK Driving Training School",
+    "site_logo": "../profile_pics/amk.png",
+    "login_logo": "",
+    "welcome_sign": "Welcome to the AMK",
+    "copyright": "hobo custom software",
+
+    "custom_js": "js/fcm_admin_config.js",
+
+    "custom_js": "js/admin_notifications.js",
+
+    "custom_css": "css/admin_notifications.css",
+
+    "show_ui_builder": False,
+}

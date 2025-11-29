@@ -12,6 +12,7 @@ import '../services/auth_service.dart';
 // Mobile breakpoint constant for responsive design
 const double kMobileBreakpoint = 600.0;
 
+// CourseDetail ကို nullable ဖြစ်စေရန် ပြင်ဆင်ပါ
 class CourseDetailScreen extends StatefulWidget {
   final int courseId;
   final String title;
@@ -20,7 +21,7 @@ class CourseDetailScreen extends StatefulWidget {
     super.key,
     required this.courseId,
     required this.title,
-    Course? course, // 💡 title ကို required အဖြစ် ထည့်သွင်း
+    Course? course,
   });
 
   @override
@@ -29,9 +30,10 @@ class CourseDetailScreen extends StatefulWidget {
 
 class _CourseDetailScreenState extends State<CourseDetailScreen> {
   final ApiService _apiService = ApiService();
-  final AuthService _authService = AuthService(); // 💡 AuthService instance
+  final AuthService _authService = AuthService();
 
-  late Future<CourseDetail> _courseDetailFuture;
+  // 💡 CourseDetail ကို nullable ဖြစ်စေရန် ပြင်ဆင်ပါ
+  late Future<CourseDetail?> _courseDetailFuture;
   Future<List<CourseSession>>? _sessionsFuture;
 
   bool _isBooking = false;
@@ -40,12 +42,24 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   @override
   void initState() {
     super.initState();
-    // Step 1: Course Detail ကို အရင်ခေါ်ယူပါ
-    _courseDetailFuture = _apiService.fetchCourseDetail(widget.courseId);
+
+    // 💡 [FIXED LOGIC] ID 0/Negative ကို စစ်ဆေးခြင်း (Guard Logic)
+    if (widget.courseId <= 0) {
+      // ID 0 ဖြစ်လျှင် API ကို လုံးဝ မခေါ်ဘဲ၊ Null တန်ဖိုးနဲ့ ပြီးဆုံးစေသော Future ကို သတ်မှတ်သည်။
+      // Future<CourseDetail?> ဖြစ်သောကြောင့် Future.value(null) ကို သုံးနိုင်သည်။
+      _courseDetailFuture = Future.value(null);
+      print("INFO: Course ID is 0. Skipping API fetch for CourseDetailScreen.");
+    } else {
+      // ID > 0 ဖြစ်မှသာ API ကို ခေါ်ယူပါ
+      _courseDetailFuture = _apiService.fetchCourseDetail(widget.courseId);
+    }
 
     // Step 2: Detail Future ပြီးဆုံးမှ Sessions ကို ထပ်ခေါ်ရန် Logic (batchIdToFetch ကို အသုံးပြု)
     _courseDetailFuture
         .then((courseDetail) {
+          // 💡 courseDetail သည် null ဖြစ်နေပါက ချက်ချင်းရပ်မည်
+          if (courseDetail == null) return;
+
           final int? batchId = courseDetail.batchIdToFetch;
 
           if (batchId != null && batchId > 0) {
@@ -55,9 +69,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           }
         })
         .catchError((error) {
-          print(
-            "Error fetching course detail for session initialization: $error",
-          );
+          // 💡 ID 0 Error သည် ဤနေရာသို့ ရောက်လာမည် မဟုတ်တော့ပါ
+          print("INFO: Session initialization error caught: $error");
         });
   }
 
@@ -104,12 +117,11 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     // ==========================================================
     // 1. AUTHENTICATION CHECK
     // ==========================================================
-    // 💡 ပထမဆုံး ချက်ခြင်းစစ်ဆေးပါ။ (Delay မလုပ်တော့ပါ)
+    // ... (Authentication Logic is correct) ...
+
     bool loggedIn = await _authService.isLoggedIn();
 
-    // 1.1. Login မဝင်ရသေးရင်
     if (!loggedIn) {
-      // Login Modal ဖွင့်ရန်
       final bool? loginSuccess = await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => const LoginScreen(isModal: true),
@@ -122,25 +134,18 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
       }
     }
 
-    // 1.2. 💡 Login ဝင်ပြီးသား သို့မဟုတ် Login အခုမှ ဝင်ပြီးသူဖြစ်ပါက
-    // ချက်ချင်း Booking ကို မခေါ်သေးဘဲ Token ကို ဆွဲထုတ်ပြီး Auth ခိုင်မာကြောင်း အတည်ပြုပါ။
-    String? token = await _authService
-        .getAuthToken(); // 💡 AuthService မှ Token ကို တိုက်ရိုက်တောင်းသည်
+    String? token = await _authService.getAuthToken();
 
     if (token == null || token.isEmpty) {
-      // Token အမှန်တကယ် မတွေ့ရသေးပါက (နောက်ဆုံး Error ကို ပြသပြီး ရပ်သည်)
       _showSnackbar(
-        'Login အောင်မြင်သော်လည်း၊ စာရင်းသွင်းရန်အတွက် Authorization token ကို ပြန်လည်အတည်မပြုနိုင်ပါ။ ကျေးဇူးပြု၍ ခဏကြာပြီးမှ ထပ်မံကြိုးစားပါ သို့မဟုတ် App ကို ပိတ်ပြီး ပြန်ဖွင့်ပါ။',
+        'Login အောင်မြင်သော်လည်း၊ Authorization token ကို ပြန်လည်အတည်မပြုနိုင်ပါ။',
         color: Colors.red,
       );
       return;
     }
 
-    // 💡 ဤနေရာသို့ ရောက်ပါက Token ရှိနေသည်မှာ သေချာပါသည်။
-    // (ApiService ၏ _getHeaders() သည် ဤအချိန်၌ Token ကို သေချာပေါက် ရရှိသင့်ပါပြီ။)
-
     // ==========================================================
-    // 2. PRE-BOOKING CHECKS (Auth ပြီးမှ စစ်ဆေး)
+    // 2. PRE-BOOKING CHECKS
     // ==========================================================
 
     if (batchId == null || batchId == 0) {
@@ -161,7 +166,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     // 3. CREATE BOOKING
     // ==========================================================
     try {
-      // Booking API ခေါ်ဆိုမှု (ယခုအခါ ApiService သည် Header ထဲတွင် Token ကို သေချာပေါက် ရရှိပါမည်။)
       await _apiService.createBooking(
         _selectedSessionIds,
         courseId: courseId,
@@ -178,7 +182,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           MaterialPageRoute(
             builder: (context) => const StudentDashboardScreen(),
           ),
-          (Route<dynamic> route) => false, // အရင် routes အားလုံးကို ဖျက်ပစ်သည်
+          (Route<dynamic> route) => false,
         );
       }
     } catch (e) {
@@ -225,7 +229,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
             padding: const EdgeInsets.all(kDefaultPadding),
             child: SizedBox(
               width: isMobile ? screenWidth * 0.95 : 700,
-              child: FutureBuilder<CourseDetail>(
+              // 💡 FutureBuilder ကို CourseDetail? ဖြင့် ကိုင်တွယ်ပါ
+              child: FutureBuilder<CourseDetail?>(
                 future: _courseDetailFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -243,7 +248,22 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       ),
                     );
                   } else if (snapshot.hasData) {
-                    final courseDetail = snapshot.data!;
+                    final courseDetail = snapshot.data;
+
+                    // 💡 [FIXED LOGIC] snapshot.data သည် null ဖြစ်နေနိုင်သည်
+                    if (courseDetail == null) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 100),
+                          child: Text(
+                            'သင်တန်း အချက်အလက် မရှိပါ။ (ID: ${widget.courseId})',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      );
+                    }
+
+                    // Data ရှိမှသာ Card ကို ဆက်ပြမည်
                     return _buildDetailCard(context, courseDetail);
                   }
                   return const SizedBox();
@@ -257,6 +277,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   // --- Course Detail Card UI ---
+  // ... (The rest of the code remains the same and is correct) ...
+
   Widget _buildDetailCard(BuildContext context, CourseDetail courseDetail) {
     final int? batchIdToPass = courseDetail.batchIdToFetch;
 
@@ -315,7 +337,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     );
   }
 
-  // 💡 Sessions Data ကို ကိုင်တွယ်မည့် FutureBuilder
+  // ... (Other helper methods remain the same and are correct) ...
+
   Widget _buildSessionFutureBuilder(CourseDetail courseDetail) {
     if (_sessionsFuture == null) {
       return const Center(

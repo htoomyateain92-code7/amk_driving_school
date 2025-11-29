@@ -1,0 +1,7 @@
+/* static/css/admin_notifications.css */
+.navbar-badge {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    font-weight: bold;
+}

@@ -1,12 +1,35 @@
 // lib/main.dart
 
-import 'package:carapp/auth_wrapper.dart';
+// import 'package:carapp/auth_wrapper.dart';
 import 'package:carapp/screens/course_selection_screen.dart';
 import 'package:carapp/services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'firebase_options.dart';
+import 'services/fcm_service.dart';
 
-void main() {
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // Production မှာ init လုပ်ဖို့လိုပါတယ်
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  print("Handling a background message: ${message.messageId}");
+
+  // [TODO]: Data payload ကို ကိုင်တွယ်တဲ့ Logic ကို ဒီနေရာမှာ ရေးပါ
+  FcmService.handleNotificationNavigation(message.data);
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 1. Firebase Core Initialization
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // 2. Background Handler ကို Register လုပ်ခြင်း
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // 3. Foreground/Interaction Handlers တွေကို စတင်ခြင်း
+  FcmService().setupFcmHandlers();
   runApp(
     ChangeNotifierProvider(
       create: (context) => ApiService(),

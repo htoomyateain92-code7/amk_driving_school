@@ -76,6 +76,17 @@ class Booking(models.Model):
 
     def __str__(self):
         return f"Booking for {self.student.username} in {self.course.title}"
+    
+    def calculate_duration(self):
+        """Booking လုပ်ထားသော sessions များ၏ စုစုပေါင်းကြာချိန်ကို တွက်ချက်ခြင်း"""
+        total_minutes = 0
+        for session in self.sessions.all():
+            # Session ကြာချိန်ကို တွက်ချက်ခြင်း (မိနစ်ဖြင့်)
+            duration_td = session.end_dt - session.start_dt
+            total_minutes += int(duration_td.total_seconds() / 60)
+        
+        self.total_booked_duration_minutes = total_minutes
+        return total_minutes
 
 # class Enrollment(models.Model):
 #     STATUS_CHOICES = (
@@ -90,11 +101,43 @@ class Booking(models.Model):
 #         unique_together = ("user","batch")
 
 class DeviceToken(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    token = models.CharField(max_length=512, unique=True)
-    platform = models.CharField(max_length=16, default="android")
+
+    PLATFORM_CHOICES = (
+        ('android', 'Android'),
+        ('ios', 'iOS'),
+        ('web', 'Web'),
+
+        ('desktop', 'Desktop'),
+    )
+
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='fcm_devices'
+    )
+
+
+    token = models.CharField(max_length=255, unique=True, db_index=True)
+
+
+    platform = models.CharField(
+        max_length=16,
+        choices=PLATFORM_CHOICES,
+        default="android"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+
+        verbose_name = "FCM Device Token"
+        verbose_name_plural = "FCM Device Tokens"
+
+    def __str__(self):
+        return f"{self.user.username} ({self.platform}): {self.token[:20]}..."
 
 
 class Quiz(models.Model):
@@ -194,6 +237,7 @@ class Notification(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
     title = models.CharField(max_length=255)
     body = models.TextField()
+    payload = models.JSONField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -1,18 +1,24 @@
 
+from decimal import Decimal
 import random
 from rest_framework import serializers # type: ignore
 
-from accounts.serializers import SimpleUserSerializer
+from accounts.serializers import SimpleUserSerializer # type: ignore
 from .models import Article, Booking, Course, Batch, Notification, Option, Question, Quiz, Session, DeviceToken, Submission
-
+from django.db import transaction
 from django.db.models import Q
-from .models import  Session
-from core import models
+
+from . models import*
 from django.utils import timezone
 import pytz
+from .utils import send_fcm_notification
 
 
 
+def send_fcm_notification(token, title, body, data):
+   
+    print(f"FCM Sending to {token[:10]}... Title: {title}")
+    pass
 
 
 
@@ -113,31 +119,56 @@ class BookingListDetailSerializer(serializers.ModelSerializer):
         fields = ['id', 'student', 'course', 'sessions', 'status', 'created_at']
 
 
-class BookingCreateSerializer(serializers.ModelSerializer):
-    """
-    Flutter app
-    """
-    # Flutter から course_id と session_ids を受け取る
+class BookingSerializer(serializers.ModelSerializer):
+
     course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all())
     sessions = serializers.PrimaryKeyRelatedField(queryset=Session.objects.all(), many=True)
 
+    course_title = serializers.CharField(source='course.title', read_only=True)
+    total_price = serializers.CharField(source='course.price', read_only=True)
+
     class Meta:
         model = Booking
-        fields = ['course', 'sessions'] # status と student は view で自動的に設定されます
+        fields = [
+            'id',
+            'status',
+            'created_at',
+            'batch',
+            'course',
+            'sessions',
+            'course_title',
+            'total_price',
+        ]
+        read_only_fields = [
+            'id', 'status', 'created_at', 'batch', 'course_title', 'total_price'
+        ]
 
     def validate(self, attrs):
         course = attrs.get('course')
         sessions = attrs.get('sessions')
+        user = self.context['request'].user
 
-        # Validation 1: 選択されたセッションがすべて同じバッチに属しているか確認
+        total_duration_minutes = sum((s.end_dt - s.start_dt).total_seconds() / 60 for s in sessions)
+        total_duration_hours = Decimal(str(total_duration_minutes / 60))
+
+        # if total_duration_hours > user.remaining_credit_hours:
+        #     raise serializers.ValidationError(
+        #         f"Booking duration ({total_duration_hours:g} hours) exceeds remaining credit ({user.remaining_credit_hours:g} hours)."
+        #     )
+        
+        for s in sessions:
+            if s.status != 'available':
+                raise serializers.ValidationError(f"Session ID {s.id} is not available for booking.")
+
+
         if len(set(s.batch for s in sessions)) > 1:
             raise serializers.ValidationError("All selected sessions must belong to the same batch.")
 
-        # Validation 2: 選択されたセッションの合計時間がコースの合計時間と一致するか確認
+        
         total_duration_minutes = sum((s.end_dt - s.start_dt).total_seconds() / 60 for s in sessions)
         required_duration_minutes = course.total_duration_hours * 60
 
-        # 小さな誤差を許容するために round を使用
+        
         if round(total_duration_minutes) != round(required_duration_minutes):
             raise serializers.ValidationError(
                 f"The total duration of selected sessions ({total_duration_minutes} min) does not match "
@@ -145,6 +176,61 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             )
 
         return attrs
+    
+    def create(self, validated_data):
+        sessions_to_book = validated_data.pop('sessions')
+        student = self.context['request'].user # Current User သည် Student ဖြစ်သည်
+        course = validated_data.get('course')
+
+        booking_batch = sessions_to_book[0].batch
+        batch=booking_batch
+        
+        # Duration တွက်ချက်ခြင်း (Validate ထဲကအတိုင်း ပြန်တွက်)
+        total_duration_minutes = sum((s.end_dt - s.start_dt).total_seconds() / 60 for s in sessions_to_book)
+        total_duration_hours = Decimal(str(total_duration_minutes / 60))
+
+        with transaction.atomic():
+            # 1. Booking Object ကို ဖန်တီးခြင်း
+            booking = Booking.objects.create(student=student, status='pending', **validated_data)
+            booking.sessions.set(sessions_to_book)
+            
+            # 2. Session Status များကို Booked အဖြစ် ပြောင်းခြင်း
+            Session.objects.filter(id__in=[s.id for s in sessions_to_book]).update(status='booked')
+            
+            # 3. 🔑 Credit Hours နှုတ်ယူခြင်း
+            # student.remaining_credit_hours -= total_duration_hours
+            # student.save(update_fields=['remaining_credit_hours'])
+            
+            # 4. 🔔 Auto Notification ပို့ခြင်း
+            # if student.fcm_devices.exists():
+            #     self._send_confirmation_notification(student, booking, total_duration_hours)
+
+            return booking
+
+    # def _send_confirmation_notification(self, student, booking, hours):
+    #     """Notification ပို့ရန် helper function"""
+        
+    #     remaining_time_display = f"{student.remaining_credit_hours:g}"
+        
+    #     title = "✅ သင်တန်း Booking အတည်ပြုပြီး"
+    #     body = (
+    #         f"သင်၏ {booking.course.title} သင်တန်းကို အတည်ပြုပြီးပါပြီ။ စုစုပေါင်းကြာချိန် {hours:g} နာရီ။ "
+    #         f"ကျန်ရှိနာရီ: {remaining_time_display} နာရီ။"
+    #     )
+        
+    #     data = {
+    #         "booking_id": str(booking.id),
+    #         "remaining_hours": remaining_time_display,
+    #         "type": "booking_confirmation"
+    #     }
+        
+    #     # 🔑 ဤနေရာတွင် User Object (student) ကို တိုက်ရိုက်ပေးပို့လိုက်ခြင်း
+    #     send_fcm_notification(
+    #         user=student,   # ⬅️ User Object ကို တိုက်ရိုက်ပို့လိုက်သည် # type: ignore
+    #         title=title, 
+    #         body=body, 
+    #         data=data
+    #     )
 
 
 # class EnrollmentCreateSer(serializers.ModelSerializer):

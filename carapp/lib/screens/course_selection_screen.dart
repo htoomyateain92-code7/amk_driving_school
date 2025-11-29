@@ -191,9 +191,12 @@ class _CourseSelectionScreenState extends State<CourseSelectionScreen> {
         ],
       ),
       body: Container(
+        height: double.infinity,
+        width: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [kGradientStart, kGradientVia, kGradientEnd],
+            stops: [0.0, 0.5, 1.0],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -277,19 +280,19 @@ class _CourseSelectionScreenState extends State<CourseSelectionScreen> {
                     const SizedBox(height: kDefaultPadding * 2),
 
                     // --- Blogs Section (Dynamic) ---
-                    if (blogs.isNotEmpty)
-                      _buildSectionHeader('Blog များ (Blogs)'),
-                    if (blogs.isNotEmpty)
-                      ...blogs.map((blog) {
-                        // 💡 API Data ဖြင့် _buildBlogItem ကို ခေါ်ဆိုခြင်း
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 8.0),
-                          child: _buildBlogItem(
-                            blog.title ?? '',
-                            blogId: blog.id,
-                          ),
-                        );
-                      }).toList(),
+                    // if (blogs.isNotEmpty)
+                    //   _buildSectionHeader('Blog များ (Blogs)'),
+                    // if (blogs.isNotEmpty)
+                    //   ...blogs.map((blog) {
+                    //     // 💡 API Data ဖြင့် _buildBlogItem ကို ခေါ်ဆိုခြင်း
+                    //     return Padding(
+                    //       padding: const EdgeInsets.only(bottom: 8.0),
+                    //       child: _buildBlogItem(
+                    //         blog.title ?? '',
+                    //         blogId: blog.id,
+                    //       ),
+                    //     );
+                    //   }).toList(),
                   ],
                 ),
               );

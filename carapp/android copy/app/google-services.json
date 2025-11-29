@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "766958394314",
+    "project_id": "amk-driving-training-sch-285cb",
+    "storage_bucket": "amk-driving-training-sch-285cb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:766958394314:android:1555c6d89952608dbdcd33",
+        "android_client_info": {
+          "package_name": "com.hobo.amk_driving_school"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAlunI_YLQnlkw-2hy7Z9B2wf-kDQJ_wxg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

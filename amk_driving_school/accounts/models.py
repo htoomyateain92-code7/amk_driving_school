@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.conf import settings
@@ -13,6 +14,13 @@ ROLE_CHOICES = (
 class User(AbstractUser):
     # Role ကို ဒီ User model မှာပဲ တစ်နေရာတည်းမှာ သိမ်းပါ
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="student")
+
+    remaining_credit_hours = models.DecimalField(
+        max_digits=5, 
+        decimal_places=2, 
+        default=Decimal('0.00'),
+        verbose_name="ကျန်ရှိသင်တန်းနာရီ"
+    )
 
     @property
     def is_owner(self):
@@ -31,10 +39,15 @@ class User(AbstractUser):
     def is_student(self):
         return self.role == "student"
 
-    @property
-    def is_staff(self):
-        # Django Admin Panel နှင့် IsAdminUser Permission များကို ထိန်းချုပ်ရန်
-        return self.role in ["owner", "admin", "instructor"]
+    # @property
+    # def is_staff(self):
+    #     # Django Admin Panel နှင့် IsAdminUser Permission များကို ထိန်းချုပ်ရန်
+    #     return self.role in ["owner", "admin", "instructor"]
+    def save(self, *args, **kwargs):
+        self.is_staff = self.role in ["owner", "admin", "instructor"]
+        self.is_staff = self.is_superuser or is_staff_based_on_role # type: ignore
+        super().save(*args, **kwargs)
+
 
 
 class Profile(models.Model):

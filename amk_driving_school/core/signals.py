@@ -1,11 +1,11 @@
 # core/signals.py
-
+from firebase_admin import messaging as firebase_messaging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.db import transaction # Transaction ကို ထိန်းချုပ်ရန်
 from accounts.models import User
 from .models import Booking, Notification
-from .utils import send_fcm_notification
+from .utils import notify_all_admins, send_fcm_notification
 
 # -------------------------------------------------------------------
 # 1. Database Notification Save လုပ်သည်နှင့် FCM ကို ချက်ချင်းပို့ရန် Signal
@@ -37,12 +37,11 @@ def create_booking_notifications(sender, instance, created, **kwargs):
             try:
                 staff_to_notify = list(User.objects.filter(role__in=['owner', 'admin']))
                 
-                # Booking ကနေ Course ကို ရယူပါ
+                
                 course_title = instance.course.title if instance.course else "Unknown Course"
                 
-                # 💡 Booking က Batch/Session နဲ့ ချက်ချင်းမချိတ်သေးရင်တောင်၊ Course ရဲ့ Instructor များကို ရှာပါ
-                # ယာယီအားဖြင့် Course နဲ့ချိတ်ဆက်ထားတဲ့ Batch တွေရဲ့ Instructor များကို ရှာသည်
-                instructor_ids = instance.course.batch_set.filter(instructor__isnull=False).values_list('instructor', flat=True).distinct()
+                
+                instructor_ids = instance.course.batches.filter(instructor__isnull=False).values_list('instructor', flat=True).distinct()
                 
                 for instructor_id in instructor_ids:
                     instructor = User.objects.get(pk=instructor_id)
@@ -52,13 +51,13 @@ def create_booking_notifications(sender, instance, created, **kwargs):
                 notification_title = "New Booking Request"
                 notification_body = f"{instance.student.username} has requested to book sessions in '{course_title}'."
 
-                # Staff အားလုံးကို Database Notification ပို့ပါ (FCM က post_save(Notification) ကနေ ချက်ချင်းထွက်သွားပါမည်)
+                
                 for staff_member in staff_to_notify:
                     Notification.objects.create(
                         user=staff_member,
                         title=notification_title,
                         body=notification_body,
-                        data={"type": "new_booking", "booking_id": str(instance.pk)}
+                        payload={"type": "new_booking", "booking_id": str(instance.pk)}
                     )
                 print(f"Signal: Sent new booking notification to {len(staff_to_notify)} staff members.")
 
@@ -77,7 +76,8 @@ def create_booking_notifications(sender, instance, created, **kwargs):
                     user=student,
                     title=notification_title,
                     body=notification_body,
-                    data={"type": "booking_approved", "booking_id": str(instance.pk)}
+                    payload={"type": "booking_approved", "booking_id": str(instance.pk)},
+                    
                 )
                 print(f"Signal: Sent 'Approved' notification to student {student.username}")
 
@@ -95,7 +95,7 @@ def create_booking_notifications(sender, instance, created, **kwargs):
                     user=student,
                     title=notification_title,
                     body=notification_body,
-                    data={"type": "booking_rejected", "booking_id": str(instance.pk)}
+                    payload={"type": "booking_rejected", "booking_id": str(instance.pk)}
                 )
                 print(f"Signal: Sent 'Rejected' notification to student {student.username}")
 
@@ -105,3 +105,13 @@ def create_booking_notifications(sender, instance, created, **kwargs):
 
     # Booking save operation သည် Database တွင် အောင်မြင်စွာ ပြီးဆုံးမှသာ Notification Logic ကို ခေါ်ပါ
     transaction.on_commit(process_booking_notifications)
+
+
+@receiver(post_save, sender=Booking)
+def alert_admin_on_new_booking(sender, instance, created, **kwargs):
+    if created:
+        notify_all_admins(
+            title="New Booking Alert!",
+            body=f"Student {instance.student.username} booked {instance.course.code}.",
+            data={"booking_id": str(instance.id)}
+        )

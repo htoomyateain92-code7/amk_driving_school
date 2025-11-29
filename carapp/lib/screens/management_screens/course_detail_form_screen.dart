@@ -5,6 +5,11 @@ import 'package:flutter/services.dart';
 import '../../constants/constants.dart';
 import '../../widgets/custom_glass_app_bar.dart';
 import '../../widgets/glass_card.dart';
+import '../../models/course_detail_model.dart'; // CourseDetail Model ကို သေချာ ထပ်ထည့်ပါ။
+import 'package:flutter/foundation.dart';
+
+// Mobile breakpoint constant for responsive design (optional, but good practice)
+const double kMobileBreakpoint = 600.0;
 
 class CourseDetailScreenForm extends StatefulWidget {
   final String title;
@@ -17,10 +22,10 @@ class CourseDetailScreenForm extends StatefulWidget {
   });
 
   @override
-  State<CourseDetailScreenForm> createState() => _CourseDetailScreenState();
+  State<CourseDetailScreenForm> createState() => _CourseDetailScreenFormState(); // Class name ပြောင်းထားသည်
 }
 
-class _CourseDetailScreenState extends State<CourseDetailScreenForm> {
+class _CourseDetailScreenFormState extends State<CourseDetailScreenForm> {
   final ApiService _apiService = ApiService();
   final _formKey = GlobalKey<FormState>();
 
@@ -28,7 +33,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreenForm> {
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
   late TextEditingController _priceController;
-  late TextEditingController _imageUrlController;
+  late TextEditingController _totalDurationHoursController;
 
   // State
   bool _isPublished = false;
@@ -43,11 +48,16 @@ class _CourseDetailScreenState extends State<CourseDetailScreenForm> {
     _titleController = TextEditingController();
     _descriptionController = TextEditingController();
     _priceController = TextEditingController();
-    _imageUrlController = TextEditingController();
+    _totalDurationHoursController = TextEditingController();
 
-    // 💡 [GUARD]: ID 0 ဖြစ်လျှင် Data ကို Load လုပ်ရန် မလိုပါ
+    // 💡 [CHECKED]: ID > 0 ဖြစ်မှသာ Data Load လုပ်မည်။ (Create Mode အတွက် API မခေါ်ပါ)
     if (widget.courseId > 0) {
       _loadCourseData();
+    } else {
+      // Create Mode အတွက် default များကို သတ်မှတ်ပေးသည်
+      _isPublished = true;
+      _priceController.text = '0';
+      _totalDurationHoursController.text = '';
     }
   }
 
@@ -56,51 +66,62 @@ class _CourseDetailScreenState extends State<CourseDetailScreenForm> {
     _titleController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
-    _imageUrlController.dispose();
+    _totalDurationHoursController.dispose();
     super.dispose();
   }
 
   // Course Data ကို Server မှ ခေါ်ယူခြင်း (Update Mode အတွက်)
   Future<void> _loadCourseData() async {
-    // 💡 [GUARD]: ID 0 ဖြစ်လျှင် ချက်ချင်း return လုပ်ပါ
-    if (widget.courseId == 0) return;
+    // 1. ✅ [CRITICAL GUARD]: ID 0 သို့မဟုတ် အနုတ်တန်ဖိုးဖြစ်နေရင် ချက်ချင်းထွက်ပါ
+    if (widget.courseId <= 0) {
+      if (kDebugMode) {
+        print('INFO: Course ID is 0. Skip fetching data for Create Mode.');
+      }
+      return;
+    }
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // API call သည် widget.courseId > 0 မှသာ အလုပ်လုပ်မည်
-      final detail = await _apiService.fetchCourseDetail(widget.courseId);
+      // API Service မှ CourseDetail ကို ရယူသည်။
+      final CourseDetail detail = await _apiService.fetchCourseDetail(
+        widget.courseId,
+      );
 
+      // CourseDetail မှ Course Model သို့ ပြန်ပြောင်းထည့်သည်။
       _initialCourseData = Course(
-        // id သည် detail Model တွင် ရှိနေသည့် Type အတိုင်း ယူပြီး Nullable ကို စစ်သည်
         id: detail.id,
         title: detail.title,
         description: detail.description,
-        price: detail.price,
-
-        // 💡 [FIXED]: detail properties များကို Type Casting မပါဘဲ တိုက်ရိုက်ယူပြီး Nullable ကိုသာ စစ်ပါ။
-        isPublished: _isPublished,
-
-        color: 0xFF9C27B0,
-
+        // 🛑 [FIXED]: priceValue (double) ကို String အဖြစ် ပြောင်းထည့်ရန်
+        price: detail.priceValue.toString(),
+        isPublished: detail.isPublic,
         totalDurationHours: detail.totalDurationHours,
-        // durationDays: detail.durationDays,
+        durationDays: detail.durationDays,
+        // studentCount: detail.studentCount? ?? 0,
+        color: 0xFF9C27B0, // Default value
       );
 
+      // Controllers များတွင် Data ဖြည့်သွင်းခြင်း
       _titleController.text = _initialCourseData!.title ?? '';
       _descriptionController.text = _initialCourseData!.description ?? '';
-      _priceController.text = _initialCourseData!.price?.toString() ?? '';
+      // 💡 price ကို String အဖြစ် ထည့်သွင်းပြီး null check လုပ်သည်
+      _priceController.text = _initialCourseData!.price ?? '0';
+      _totalDurationHoursController.text =
+          _initialCourseData!.totalDurationHours ?? '0';
 
       _isPublished = _initialCourseData!.isPublished;
     } catch (e) {
       if (mounted) {
-        // [INFO]: Error သည် ID 0 (သို့) ID အမှားအတွက် 404 ဖြစ်နိုင်သည်
+        if (kDebugMode) {
+          print('FATAL ERROR during Course Data Load: $e');
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'သင်တန်းအချက်အလက် ခေါ်ယူရာတွင် Error: ${e.toString()}',
+              'သင်တန်းအချက်အလက် ခေါ်ယူရာတွင် အမှား: ${e.toString()}',
             ),
           ),
         );
@@ -122,38 +143,49 @@ class _CourseDetailScreenState extends State<CourseDetailScreenForm> {
       return;
     }
 
+    // 💡 price ကို Number အဖြစ် ပြောင်းနိုင်ခြင်း ရှိမရှိ အပြီးသတ်စစ်ပါ (Optional but safe)
+    if (double.tryParse(_priceController.text) == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ဈေးနှုန်းကို မှန်ကန်သော ဂဏန်းတန်ဖိုး ထည့်သွင်းပါ။'),
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final String priceString = (double.tryParse(_priceController.text) ?? 0.0)
-          .toString();
-
       final newCourse = Course(
-        // 💡 [CREATE/UPDATE LOGIC]: ID 0 ဖြစ်ပါက null (Create Mode)၊ မဟုတ်ပါက ID ကို သုံးသည်
+        // Create Mode (0) ဖြစ်လျှင် Backend က ID ကို လျစ်လျူရှုမည်။
         id: widget.courseId,
         title: _titleController.text,
         description: _descriptionController.text,
-        price: priceString,
+        price: _priceController.text, // String format
         isPublished: _isPublished,
 
-        // Form မှာမပါဝင်သည့် Data များကို အဟောင်းအတိုင်း ပြန်ထည့်သည်
+        totalDurationHours: _totalDurationHoursController.text,
+
+        // Form မှာမပါဝင်သည့် Data များကို Update Mode အတွက် အဟောင်းအတိုင်း ပြန်ထည့်သည်
         studentCount: _initialCourseData?.studentCount ?? 0,
         color: _initialCourseData?.color ?? 0xFF9C27B0,
-        totalDurationHours: _initialCourseData?.totalDurationHours,
         durationDays: _initialCourseData?.durationDays,
       );
 
       if (widget.courseId == 0) {
-        // Create Mode - Create API ကို ခေါ်သည်
+        // Create Mode
         await _apiService.createCourse(newCourse);
       } else {
-        // Update Mode - Update API ကို ခေါ်သည်
+        // Update Mode
         await _apiService.updateCourse(widget.courseId, newCourse);
       }
 
       if (mounted) {
+        // အောင်မြင်ပါက true ပြန်ပြီး Form ကို ပိတ်သည်
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -177,6 +209,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreenForm> {
 
   @override
   Widget build(BuildContext context) {
+    // 💡 [Final Guard]: ID 0 အတွက် Loading မပြပါ
+    final bool showLoading = _isLoading && widget.courseId > 0;
+
     return Scaffold(
       appBar: CustomGlassAppBar(
         selectedLanguage: 'MM',
@@ -197,7 +232,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreenForm> {
             end: Alignment.bottomRight,
           ),
         ),
-        child: _isLoading && widget.courseId != 0
+        // 💡 Loading Logic ကို သုံး၍ UI ကို ပြသခြင်း
+        child: showLoading
             ? const Center(
                 child: CircularProgressIndicator(color: Colors.cyanAccent),
               )
@@ -245,26 +281,34 @@ class _CourseDetailScreenState extends State<CourseDetailScreenForm> {
                         keyboardType: TextInputType.number,
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(
-                            RegExp(r'^\d+\.?\d{0,2}'),
+                            RegExp(
+                              r'^\d+[\.]?\d{0,2}',
+                            ), // ဒဿမ 2 နေရာအထိ ခွင့်ပြုသည်
                           ),
                         ],
                         validator: (value) {
-                          if (value != null &&
-                              value.isNotEmpty &&
-                              double.tryParse(value) == null) {
-                            return 'ဈေးနှုန်းကို ဂဏန်းဖြင့် မှန်ကန်စွာ ထည့်သွင်းပါ။';
+                          if (value != null && value.isNotEmpty) {
+                            if (double.tryParse(value) == null) {
+                              return 'ဈေးနှုန်းကို ဂဏန်းဖြင့် မှန်ကန်စွာ ထည့်သွင်းပါ။';
+                            }
                           }
                           return null;
                         },
                       ),
                       const SizedBox(height: kDefaultPadding),
 
-                      // --- 4. Image URL Field ---
+                      // --- 4. Duration Field ---
                       _buildTextInput(
-                        controller: _imageUrlController,
-                        label: 'Cover ပုံ URL (Optional)',
-                        hint: 'ပုံ URL ကို ထည့်သွင်းပါ',
-                        keyboardType: TextInputType.url,
+                        controller: _totalDurationHoursController,
+                        label: 'သင်တန်း ကြာချိန် (နာရီ)',
+                        hint: 'ဥပမာ: 25',
+                        keyboardType: TextInputType.number,
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'ကြာချိန် ထည့်သွင်းရန် လိုအပ်ပါသည်။';
+                          }
+                          return null;
+                        },
                       ),
                       const SizedBox(height: kDefaultPadding * 1.5),
 

@@ -6,6 +6,7 @@ import '../constants/constants.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
 import 'owner_dashboard_screen.dart';
+import '../services/fcm_service.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool isModal;
@@ -58,6 +59,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Login အောင်မြင်ပါက (Token ရရှိပြီး role ပြန်လာပါက)
       if (result['success'] == true && mounted) {
+        final String? accessToken = await apiService.getAccessToken();
+
+        if (accessToken != null) {
+          await FcmService().registerDeviceToken(accessToken);
+        } else {
+          print(
+            "WARNING: Access Token is null after successful login. FCM registration skipped.",
+          );
+        }
+
         // 💡 FIX: Role ပေါ်မူတည်၍ သက်ဆိုင်ရာ Dashboard သို့ တွန်းပို့ခြင်း
         String role = result['role']?.toLowerCase() ?? 'student';
 

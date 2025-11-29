@@ -1,35 +1,41 @@
 # core/views.py
+from .utils import send_fcm_notification, notify_all_admins
+from decimal import Decimal
 from datetime import date
 from optparse import Option
 from django.utils import timezone
-from dashboard.serializers import QuestionSerializer
+from dashboard.serializers import QuestionSerializer # type: ignore
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema, OpenApiExample
 from .models import Answer, Article, Booking, Course, Batch, Question, Quiz, Session, DeviceToken,  Submission
 from .serializers import (
-    ArticleSer, BatchDetailSerializer, BatchSerializer, BookingCreateSerializer, BookingListDetailSerializer,
+    ArticleSer, BatchDetailSerializer, BatchSerializer, BookingSerializer, BookingListDetailSerializer,
     CourseDetailSerializer, CourseListSerializer, NotificationSerializer, QuestionPublicSer, QuizDetailSer,
     SessionSer, DeviceTokenSer, SubmissionSer)
 from .services import generate_sessions
 from django.db.models import Q, Exists, OuterRef, Subquery
-
+from rest_framework.permissions import IsAuthenticated
 # Swagger/Redoc (drf-spectacular)
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from firebase_admin import messaging
 
 from django.shortcuts import get_object_or_404
 
-from core import serializers
-
-from accounts.models import User, InstructorAvailability
 from rest_framework.views import APIView # Custom Logic ရေးသားရန်
 from datetime import datetime, timedelta, time # Time တွက်ချက်မှုများအတွက်
 from .serializers import AvailableSlotSerializer
 
-from core.utils import send_fcm_notification
-from core.models import Booking, Notification
+from .utils import send_fcm_notification
+from .models import Booking, Notification
+
+from django.contrib.auth.models import User
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from django.contrib.auth.models import User
+from django.contrib.auth.models import User
+
 
 class IsInstructorOrAdmin(permissions.BasePermission):
     def has_permission(self, req, view):  # type: ignore
@@ -224,10 +230,12 @@ class PushViewSet(viewsets.ViewSet):
     def create(self, request):
         ser = DeviceTokenSer(data=request.data)
         ser.is_valid(raise_exception=True)
+        token_value = ser.validated_data["token"] # type: ignore
+        platform_value = ser.validated_data.get("platform", "android") # type: ignore
         DeviceToken.objects.update_or_create(
             user=request.user,
-            token=ser.validated_data["token"],  # type: ignore
-            defaults={"platform": ser.validated_data.get("platform", "android")},  # type: ignore
+            token=token_value,
+            defaults={"platform": platform_value},  # type: ignore
         )
         return Response({"ok": True})
 
@@ -249,46 +257,88 @@ class BookingViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):
+        
         if self.action == 'create':
-            return BookingCreateSerializer
+            return BookingSerializer
         return BookingListDetailSerializer
 
     def get_queryset(self):
-        # user က instructor/admin ဆိုရင် booking အားလုံးကိုပြ၊ student ဆိုရင် ကိုယ့်ဟာကိုယ်ပဲပြ
-        if self.request.user.is_staff:
-            return Booking.objects.all()
-        return Booking.objects.filter(student=self.request.user)
+        user = self.request.user
+        if user.is_staff or user.is_superuser:
+            return Booking.objects.all().order_by('-created_at')
+        return Booking.objects.filter(student=user).order_by('-created_at')
 
     def perform_create(self, serializer):
         # Booking အသစ်လုပ်ရင် student ကို auto သတ်မှတ်
-        booking_instance = serializer.save(student=self.request.user, status='pending')
+        booking_instance = serializer.save()
+
+        sessions_to_update = booking_instance.sessions.all()
 
         # Sessions Status ကို 'booked' အဖြစ် ပြောင်းလဲခြင်း
         sessions_to_update = serializer.validated_data.get('sessions')
+        
         session_ids = [s.id for s in sessions_to_update]
 
         # Sessions များကို bulk update လုပ်ခြင်း
-        Session.objects.filter(id__in=session_ids).update(status='booked')
+        # Session.objects.filter(id__in=session_ids).update(status='booked')
 
-        # Note: Approved လုပ်တဲ့ action ထဲမှာတော့ 'booked' ကို 'approved' ဖြစ်မှ update လုပ်တာ ပိုကောင်းပါတယ်
-        # အခုကတော့ စာရင်းသွင်းပြီးတာနဲ့ ချက်ချင်း 'booked' အဖြစ် သတ်မှတ်လိုက်ပါတယ်။
+        # total_duration = sum(s.duration_hours for s in sessions_to_update)
+
+        # user = self.request.user
+        # user.remaining_credit_hours -= total_duration # type: ignore
+
+        # user.save()
+
+        notify_all_admins(
+            title="New Booking",
+            body=f"Booking အသစ် {booking_instance.student.username} ထံမှ ဝင်လာပါပြီ။",
+            data={"type": "new_booking", "booking_id": str(booking_instance.id)}
+        )
 
         return booking_instance
+    
+    
 
-    @action(detail=True, methods=['post'], permission_classes=[IsInstructorOrAdmin]) # Permission check ထည့်လိုက်သည်
+    # core/views.py (BookingViewSet.approve method အတွင်း)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsInstructorOrAdmin])
     def approve(self, request, pk=None):
         booking = self.get_object()
-        
-        # Approved လုပ်လိုက်ရင် Booking ရဲ့ Status ကို 'approved' ပြောင်းပါ
-        booking.status = 'approved'
-        booking.save()
+        user = booking.student
 
-        # Sessions status ကို 'booked' (သို့မဟုတ် 'scheduled' ကို ပြန်ပြောင်းခြင်း)
-        # လက်ရှိ logic အရ 'booked' ကို ပြောင်းပြီးသားဖြစ်လို့ ဒီနေရာမှာ ထပ် update လုပ်စရာမလိုပါဘူး။
-        # သို့သော် Sessions များကိုလည်း status="scheduled" သို့ ပြောင်းပေးနိုင်သည် (သင့် business logic အပေါ် မူတည်သည်)
-        # ဥပမာ- booking.sessions.all().update(status='scheduled')
-        
+        if booking.status != 'approved':
+
+            course_duration = booking.course.total_duration_hours
+
+            booked_duration = sum(s.duration_hours for s in booking.sessions.all())
+
+            user.remaining_credit_hours += course_duration # Course အတွက် Credit ပေါင်းထည့်
+            user.remaining_credit_hours -= booked_duration # Booking အတွက် Credit နုတ်ယူ
+            user.save()
+
+
+            booking.status = 'approved'
+            booking.save()
+
+            # 2. Database Notification (Inbox) ရေးသွင်းခြင်း
+            Notification.objects.create(
+                user=booking.student,
+                title="သင်တန်း စာရင်းသွင်းမှု အတည်ပြုပြီး",
+                body=f"သင်၏ {booking.course.title} သင်တန်းကို အောင်မြင်စွာ စာရင်းသွင်းပြီးပါပြီ။",
+                # Optional: payload data ထည့်သွင်းနိုင်
+            )
+
+            # 3. FCM Push Notification ပို့ခြင်း
+            send_fcm_notification(
+                user=booking.student,
+                title="အတည်ပြုပြီး",
+                body=f"{booking.course.title} သင်တန်း စတင်တက်ရောက်နိုင်ပါပြီ။",
+                data={"type": "booking_approved", "course_id": str(booking.course.id)} 
+            )
+
         return Response({'status': 'booking approved'})
+
+# Note: reject မှာလည်း student ကို notification ပြန်ပို့နိုင်ပါတယ်။
 
     @action(detail=True, methods=['post'], permission_classes=[IsInstructorOrAdmin]) # Permission check ထည့်လိုက်သည်
     def reject(self, request, pk=None):
@@ -298,6 +348,15 @@ class BookingViewSet(viewsets.ModelViewSet):
         
         # Reject လုပ်ရင် Sessions တွေကို 'available' (scheduled) အဖြစ် ပြန်ပြောင်းပါ
         booking.sessions.all().update(status='available')
+
+        if booking.status == 'rejected' and booking.student:
+            # Booking လုပ်ခဲ့သော Sessions များ၏ စုစုပေါင်း duration ကို ပြန်ယူပါ
+            total_duration = sum(s.duration_hours for s in booking.sessions.all())
+            
+            # ကျောင်းသား၏ Credit Balance ထဲသို့ ပြန်လည်ပေါင်းထည့်ပေးပါ
+            student_user = booking.student
+            student_user.remaining_credit_hours += total_duration # type: ignore
+            student_user.save()
         
         return Response({'status': 'booking rejected'})
 
@@ -419,6 +478,45 @@ class SubmissionViewSet(viewsets.GenericViewSet):
         questions = submission.quiz.questions.all().prefetch_related('options', 'order_items')
         serializer = QuestionPublicSer(questions, many=True)
         return Response(serializer.data)
+    
+    # core/views.py (SessionViewSet.mark_completed method အတွင်း)
+
+@action(detail=True, methods=["POST"], permission_classes=[IsInstructorOrAdmin])
+def mark_completed(self, request, pk=None):
+    s = self.get_object()
+    s.status = "completed"; s.save(update_fields=["status"])
+    
+    # Session ကို တက်ရောက်ခွင့်ရှိသူများ (Approved Students)
+    approved_students = User.objects.filter(
+        bookings__sessions=s,
+        bookings__status='approved'
+    ).distinct()
+
+    tokens = []
+
+    for student in approved_students:
+        # 1. Database Notification (Inbox) ရေးသွင်းခြင်း
+        Notification.objects.create(
+            user=student,
+            title=f"{s.batch.course.title} ပြီးဆုံး",
+            body=f"{s.batch.course.title} အတွက် Session {s.start_dt.strftime('%d-%b')} ကို ပြီးစီးကြောင်း မှတ်သားလိုက်ပါပြီ။",
+            payload={"session_id": str(s.id)}, # Custom data
+        )
+        
+        # 2. FCM Token များကို စုဆောင်းခြင်း
+        student_tokens = list(student.fcm_devices.values_list("token", flat=True)) # type: ignore # fcm_devices ကို DeviceToken model မှာ related_name နဲ့ သတ်မှတ်ထားတယ်လို့ ယူဆပါတယ်
+        tokens.extend(student_tokens)
+
+
+    if tokens:
+        messaging.send_multicast(messaging.MulticastMessage( # type: ignore
+            tokens=tokens,
+            notification=messaging.Notification(
+                title=f"{s.batch.course.title}",
+                body="Class marked as completed"),
+            data={"type":"session.completed","session_id":str(s.id)}
+        ))
+    return Response({"ok": True})
 
 
 
@@ -441,17 +539,10 @@ class ArticleViewSet(viewsets.ModelViewSet):
 
 
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    A viewset for viewing notifications for the current user.
-    """
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        """
-        This view should return a list of all the notifications
-        for the currently authenticated user.
-        """
         return self.request.user.notifications.all() # type: ignore
 
     @action(detail=True, methods=['post'], url_path='mark-as-read')
@@ -463,7 +554,34 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'status': 'notification marked as read'})
         return Response(status=status.HTTP_403_FORBIDDEN)
 
+    @action(detail=False, methods=['post'], url_path='mark-all-as-read')
+    def mark_all_as_read(self, request):
+        user: 'User' = request.user
+        unread_notifications = self.request.user.notifications.filter(is_read=False) # type: ignore
+        updated_count = unread_notifications.update(is_read=True)
 
+        return Response({
+            'status': 'success', 
+            'message': 'All notifications marked as read',
+            'updated_count': updated_count
+        })
+
+
+
+class NotificationCountView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, format=None):
+        user = request.user
+        
+        # User နှင့် is_read=False ဖြစ်သော Notification များကို ရေတွက်သည်
+        unread_count = Notification.objects.filter(
+            user=user, 
+            is_read=False
+        ).count()
+
+        # JSON response တွင် 'unread_count' key ဖြင့် ပြန်ပေးသည်
+        return Response({'unread_count': unread_count})
 
 
 class AvailableSlotsView(APIView):
@@ -497,11 +615,7 @@ class AvailableSlotsView(APIView):
 
         # နေ့ရက်တစ်ခုချင်းစီကို စစ်ဆေးခြင်း
         while current_date <= end_date:
-            # TODO: ဤနေရာတွင် InstructorAvailability Model ကို အသုံးပြုနိုင်သည်
-            # (သို့သော် လက်ရှိ models.py တွင် မပါဝင်သေးသောကြောင့် Fixed Time ယူဆပါမည်)
-            
-            # Fixed Time Window: နံနက် ၉:၀၀ မှ ညနေ ၅:၀၀
-            # Note: timezone-aware ဖြစ်စေရန် settings.py ကို စစ်ဆေးပါ
+           
             day_start_time = datetime.combine(current_date, time(hour=9))
             day_end_time = datetime.combine(current_date, time(hour=17))
             
@@ -510,13 +624,13 @@ class AvailableSlotsView(APIView):
             while current_slot_start + timedelta(minutes=session_duration) <= day_end_time:
                 current_slot_end = current_slot_start + timedelta(minutes=session_duration)
                 
-                # Conflict စစ်ဆေးခြင်း: ဤ Batch အတွင်းရှိ sessions များ သို့မဟုတ် အခြား Batch များမှ 
-                # (batch_id ကိုသာ စစ်ပါမည်၊ instructor တစ်ဦးတည်းရဲ့ sessions များစွာကို စစ်လိုပါက logic ကို ပြင်ရပါမည်)
+                
                 is_booked = Session.objects.filter(
-                    batch=batch, # ဤ Batch အတွက်သာ စစ်ဆေးခြင်း
+                    # batch=batch,
+                    batch__instructor_id=instructor_id,
                     start_dt__lt=current_slot_end,
                     end_dt__gt=current_slot_start,
-                    status__in=['booked', 'completed']
+                    status__in=['booked', 'scheduled', 'completed']
                 ).exists()
 
                 if not is_booked:
@@ -559,3 +673,67 @@ def approve_booking_view(request, booking_id):
             body=f"{booking.course.title} သင်တန်း စတင်တက်ရောက်နိုင်ပါပြီ။",
             data={"type": "booking_approved", "course_id": str(booking.course.id)} # Flutter တွင် ကိုင်တွယ်ရန် # type: ignore
         )
+
+
+
+from rest_framework.decorators import api_view, permission_classes # type: ignore
+from rest_framework.permissions import IsAdminUser # type: ignore
+from rest_framework.response import Response # type: ignore
+from .models import DeviceToken
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser]) # Admin များသာ
+def register_admin_device(request):
+    token = request.data.get('token')
+    platform = request.data.get('platform', 'web_admin')
+    
+    if token:
+        DeviceToken.objects.update_or_create(
+            user=request.user,
+            token=token,
+            defaults={'platform': platform}
+        )
+        return Response({"status": "success", "message": "Admin token saved"})
+    return Response({"status": "error"}, status=400)
+
+
+
+from django.http import HttpResponse
+from django.conf import settings
+import os
+
+def firebase_messaging_sw(request):
+    # Static file ထဲက js ကို ဖတ်ပြီး ပြန်ပေးမည်
+    path = os.path.join(settings.STATIC_ROOT, 'firebase-messaging-sw.js')
+    # Dev Mode မှာ staticfiles dirs ကို ရှာဖွေပါ
+    if not os.path.exists(path):
+        path = os.path.join(settings.BASE_DIR, 'static', 'firebase-messaging-sw.js')
+
+    with open(path, 'r') as f:
+        return HttpResponse(f.read(), content_type='application/javascript')
+
+
+
+
+from django.http import JsonResponse
+from django.contrib.admin.views.decorators import staff_member_required
+from .models import Notification
+
+@staff_member_required
+def get_unread_notifications(request):
+    unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+
+    latest_notifs = Notification.objects.filter(user=request.user, is_read=False).order_by('-created_at')[:5]
+
+    data = {
+        "count": unread_count,
+        "notifications": [
+            {
+                "title": n.title,
+                "body": n.body[:40] + "...", # စာရှည်ရင် ဖြတ်မယ်
+                "time": n.created_at.strftime("%H:%M"),
+                "url": f"/admin/core/notification/{n.id}/change/" # နှိပ်ရင် Admin Detail ကိုသွားမယ် # type: ignore
+            } for n in latest_notifs
+        ]
+    }
+    return JsonResponse(data)

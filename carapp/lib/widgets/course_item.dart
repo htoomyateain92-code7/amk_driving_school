@@ -38,7 +38,6 @@ class CourseItem extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            // သင်တန်း အချိန်/ခေါင်းစဉ်
             Text(
               '$duration | $title',
               style: const TextStyle(
@@ -49,7 +48,6 @@ class CourseItem extends StatelessWidget {
             ),
             const SizedBox(height: 5),
 
-            // ဈေးနှုန်း
             Text(
               price,
               style: const TextStyle(
@@ -60,7 +58,6 @@ class CourseItem extends StatelessWidget {
             ),
             const SizedBox(height: 8),
 
-            // 💡 [New]: description ကို ထည့်သွင်းပြသခြင်း
             Text(
               description,
               style: const TextStyle(fontSize: 12, color: Colors.white54),
@@ -68,12 +65,11 @@ class CourseItem extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
 
-            const Spacer(), // နေရာယူရန်
-            // စာရင်းသွင်းရန် Button
+            const Spacer(),
+
             Align(
               alignment: Alignment.centerLeft,
               child: OutlinedButton(
-                // 💡 [FIX 1]: onPressed ကို onTap callback ဖြင့် အစားထိုးခြင်း (Navigation Logic)
                 onPressed: onTap,
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Colors.white),
@@ -86,7 +82,6 @@ class CourseItem extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  // 💡 [FIX 2]: buttonText prop ကို အသုံးပြုခြင်း
                   buttonText,
                   style: const TextStyle(
                     color: Colors.white,

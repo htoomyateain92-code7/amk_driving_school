@@ -1,0 +1,24 @@
+// static/firebase-messaging-sw.js
+importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
+
+const firebaseConfig = {
+   // (အပေါ်က Config အတိုင်း ပြန်ထည့်ပါ)
+   apiKey: "YOUR_API_KEY",
+   // ...
+};
+
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage(function(payload) {
+  console.log('Received background message ', payload);
+  
+  const notificationTitle = payload.notification.title;
+  const notificationOptions = {
+    body: payload.notification.body,
+    icon: '/static/img/icon.png' // သင်္ကေတပုံ
+  };
+
+  return self.registration.showNotification(notificationTitle, notificationOptions);
+});

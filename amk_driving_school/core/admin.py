@@ -232,7 +232,7 @@ class ArticleAdmin(admin.ModelAdmin):
 
     @admin.display(description="Tags")
     def tag_list(self, obj):
-        return ", ".join(obj.tags or [])
+        return ", ".join(obj.tags.values_list('name', flat=True))
 
 
 @admin.register(Notification)

@@ -1,0 +1,13 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
+    
+    <script>
+        window.VAPID_PUBLIC_KEY = "BOPOyWVJlSQKlRTdf9s6C09FvHCMYi21iMeUuEVjiE2yhKdPFNb6EsmTgMtrYwXrsj2NVKqZOjM8MYMjiQtK9lA"; 
+        // views.py context processor သို့မဟုတ် hardcode ထည့်သွင်းနိုင်သည်
+    </script>
+{% endblock %}
