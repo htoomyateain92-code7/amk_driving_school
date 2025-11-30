@@ -1,0 +1,5 @@
+[[plugins]]
+package = "netlify-plugin-flutter"
+
+[plugins.inputs]
+flutter_version = "3.16.5"
