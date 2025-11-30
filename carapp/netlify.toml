@@ -2,4 +2,9 @@
 package = "netlify-plugin-flutter"
 
 [plugins.inputs]
-flutter_version = "3.16.5"
+channel = "stable"
+
+[build]
+base = "carapp"
+publish = "carapp/build/web"
+command = "flutter build web --release"
