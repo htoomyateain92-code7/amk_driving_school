@@ -6,5 +6,5 @@ channel = "stable"
 
 [build]
 base = "carapp"
-publish = "carapp/build/web"
+publish = "build/web"
 command = "flutter build web --release"
