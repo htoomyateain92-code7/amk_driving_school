@@ -30,14 +30,14 @@ class ApiService with ChangeNotifier {
   String get _baseIpPort {
     if (kIsWeb) {
       // Web (Chrome) အတွက် localhost
-      return 'http://127.0.0.1:8000';
+      return 'https://amk-driving-school.onrender.com';
     } else if (Platform.isAndroid) {
       // Android Emulator အတွက် 10.0.2.2 (Host PC ကို ရည်ညွှန်းရန်)
-      return 'http://10.0.2.2:8000';
+      return 'https://amk-driving-school.onrender.com';
     } else {
       // iOS Simulator/Desktop/Physical Device အတွက် (လိုအပ်ပါက 127.0.0.1 အစား
       // သင်၏ Local IP ဥပမာ: 192.168.1.x ကို ပြောင်းနိုင်ပါသည်။)
-      return 'http://127.0.0.1:8000';
+      return 'https://amk-driving-school.onrender.com';
     }
   }
 
